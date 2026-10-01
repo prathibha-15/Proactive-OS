@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+:root {
+  font-family: Georgia, Cambria, "Times New Roman", serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+}

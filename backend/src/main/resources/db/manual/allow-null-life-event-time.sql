@@ -1,0 +1,1 @@
+ALTER TABLE life_events ALTER COLUMN event_time DROP NOT NULL;
