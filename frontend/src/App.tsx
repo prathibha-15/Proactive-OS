@@ -13,8 +13,19 @@ function formatTimestamp(value: string | null) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
 }
 
+function localDateKey(value: Date) {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function eventDateKey(value: string | null) {
+  return value ? localDateKey(new Date(value)) : null
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-screen bg-stone-50 px-5 py-8 text-stone-950 sm:px-10 sm:py-10"><div className="mx-auto max-w-4xl"><header className="flex items-center justify-between border-b border-stone-300 pb-5"><Link to="/" className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</Link><nav className="flex gap-5"><Link to="/journals" className="text-sm font-medium text-stone-600 hover:text-teal-700">Journal history</Link><Link to="/events" className="text-sm font-medium text-stone-600 hover:text-teal-700">Life events</Link></nav></header>{children}</div></main>
+  return <main className="min-h-screen bg-stone-50 px-5 py-8 text-stone-950 sm:px-10 sm:py-10"><div className="mx-auto max-w-4xl"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-300 pb-5"><Link to="/dashboard" className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</Link><nav aria-label="Main navigation" className="flex flex-wrap gap-x-5 gap-y-2"><Link to="/dashboard" className="text-sm font-medium text-stone-600 hover:text-teal-700">Overview</Link><Link to="/" className="text-sm font-medium text-stone-600 hover:text-teal-700">Write journal</Link><Link to="/journals" className="text-sm font-medium text-stone-600 hover:text-teal-700">Journals</Link><Link to="/events" className="text-sm font-medium text-stone-600 hover:text-teal-700">Life events</Link></nav></header>{children}</div></main>
 }
 
 function JournalForm({ initialContent = '', submitLabel, onSubmit, isPending, error }: { initialContent?: string, submitLabel: string, onSubmit: (content: string) => void, isPending: boolean, error?: string }) {
@@ -36,6 +47,48 @@ function ComposePage() {
   const createMutation = useMutation({ mutationFn: journalApi.createJournal, onSuccess: (journal) => { queryClient.invalidateQueries({ queryKey: ['journals'] }); navigate(`/journals/${journal.id}`) } })
 
   return <Layout><JournalForm submitLabel="Save journal" isPending={createMutation.isPending} error={createMutation.error?.message} onSubmit={(content) => createMutation.mutate({ content })} /></Layout>
+}
+
+function DashboardPage() {
+  const today = localDateKey(new Date())
+  const journalsQuery = useQuery({ queryKey: ['journals'], queryFn: journalApi.getJournals })
+  const eventsQuery = useQuery({ queryKey: ['events'], queryFn: () => eventsApi.getEvents() })
+  const journals = journalsQuery.data ?? []
+  const events = eventsQuery.data ?? []
+  const todayJournals = journals.filter((journal) => journal.entryDate === today)
+  const eventsToday = events.filter((event) => eventDateKey(event.eventTime) === today)
+  const unknownEventTimes = events.filter((event) => event.eventTime === null).length
+  const recentEvents = [...events]
+    .sort((left, right) => new Date(right.eventTime ?? right.createdAt).getTime() - new Date(left.eventTime ?? left.createdAt).getTime())
+    .slice(0, 5)
+  const eventCounts = LIFE_EVENT_TYPES.map((type) => ({ type, count: events.filter((event) => event.type === type).length }))
+
+  return <Layout><section className="py-10">
+    <p className="text-sm font-semibold tracking-[0.14em] text-teal-700">PROACTIVE OS / OVERVIEW</p>
+    <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+      <div><h1 className="text-4xl font-semibold sm:text-5xl">Your activity</h1><p className="mt-2 text-stone-600">A view of what you have recorded.</p></div>
+      <Link to="/" className="bg-teal-700 px-4 py-3 font-semibold text-white transition hover:bg-teal-800">Write a journal</Link>
+    </div>
+    {(journalsQuery.isError || eventsQuery.isError) && <p role="alert" className="mt-6 text-rose-700">{journalsQuery.error?.message ?? eventsQuery.error?.message}</p>}
+    {(journalsQuery.isPending || eventsQuery.isPending) && <p className="mt-8 text-stone-600">Loading your activity...</p>}
+    {!journalsQuery.isPending && !eventsQuery.isPending && !journalsQuery.isError && !eventsQuery.isError && <>
+      <div className="mt-8 grid gap-px border border-stone-300 bg-stone-300 sm:grid-cols-3">
+        <div className="bg-white p-5"><p className="text-sm text-stone-500">Journals today</p><p className="mt-2 text-3xl font-semibold">{todayJournals.length}</p></div>
+        <div className="bg-white p-5"><p className="text-sm text-stone-500">Events today, time known</p><p className="mt-2 text-3xl font-semibold">{eventsToday.length}</p></div>
+        <div className="bg-white p-5"><p className="text-sm text-stone-500">Events with unknown time</p><p className="mt-2 text-3xl font-semibold">{unknownEventTimes}</p></div>
+      </div>
+
+      <section className="mt-10">
+        <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Events by type</h2><Link to="/events" className="text-sm font-medium text-teal-700 underline">View timeline</Link></div>
+        {events.length === 0 ? <p className="mt-4 border-y border-stone-300 py-6 text-stone-600">No events recorded yet. Extract activities from a journal or add an event manually.</p> : <ul className="mt-4 grid gap-x-8 sm:grid-cols-2">{eventCounts.filter(({ count }) => count > 0).map(({ type, count }) => <li key={type} className="flex justify-between border-b border-stone-300 py-3"><span>{type}</span><span className="font-semibold">{count}</span></li>)}</ul>}
+      </section>
+
+      <section className="mt-10">
+        <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Recent activity</h2><Link to="/journals" className="text-sm font-medium text-teal-700 underline">Journal history</Link></div>
+        {recentEvents.length === 0 ? <p className="mt-4 text-stone-600">Events you extract or add will appear here.</p> : <ul className="mt-3">{recentEvents.map((event) => <li key={event.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-stone-300 py-4"><div><p className="font-semibold text-teal-700">{event.type}</p><p className="mt-1 text-stone-700">{eventSummary(event)}</p><p className="mt-1 text-xs uppercase tracking-wide text-stone-400">Source: {event.source}</p></div><p className="text-sm text-stone-500">{event.eventTime ? formatTimestamp(event.eventTime) : `Activity time unknown · recorded ${formatTimestamp(event.createdAt)}`}</p></li>)}</ul>}
+      </section>
+    </>}
+  </section></Layout>
 }
 
 function JournalHistoryPage() {
@@ -157,6 +210,7 @@ function EventListItem({ event, onEdit, onDelete }: { event: LifeEvent, onEdit: 
 function EventsPage() {
   const queryClient = useQueryClient()
   const [typeFilter, setTypeFilter] = useState<LifeEventType | ''>('')
+  const [eventDate, setEventDate] = useState('')
   const [editingEvent, setEditingEvent] = useState<LifeEvent | null>(null)
   const [showForm, setShowForm] = useState(false)
 
@@ -164,6 +218,7 @@ function EventsPage() {
   const createMutation = useMutation({ mutationFn: eventsApi.createEvent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); setShowForm(false) } })
   const updateMutation = useMutation({ mutationFn: ({ id, request }: { id: number, request: LifeEventRequest }) => eventsApi.updateEvent(id, request), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); setEditingEvent(null) } })
   const deleteMutation = useMutation({ mutationFn: eventsApi.deleteEvent, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['events'] }) })
+  const filteredEvents = (eventsQuery.data ?? []).filter((event) => !eventDate || eventDateKey(event.eventTime) === eventDate)
 
   return <Layout><section className="py-10">
     <p className="text-sm font-semibold tracking-[0.14em] text-teal-700">LIFE EVENTS</p>
@@ -173,16 +228,21 @@ function EventsPage() {
         <option value="">All types</option>
         {LIFE_EVENT_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
       </select>
+      <label className="flex items-center gap-2 text-sm text-stone-600">Activity date <input type="date" value={eventDate} onChange={(event) => setEventDate(event.target.value)} className="border border-stone-300 bg-white p-2 text-stone-900" /></label>
+      {(typeFilter || eventDate) && <button onClick={() => { setTypeFilter(''); setEventDate('') }} className="text-sm font-medium text-teal-700 underline">Clear filters</button>}
       <button onClick={() => { setShowForm((current) => !current); setEditingEvent(null) }} className="border border-stone-400 px-4 py-2 font-medium hover:border-teal-700">{showForm ? 'Cancel' : 'Add event'}</button>
     </div>
+    <p className="mt-3 text-sm text-stone-500">Date filters use known activity times; events with unknown times remain unfiltered only when no date is selected.</p>
     {showForm && <EventForm submitLabel="Save event" isPending={createMutation.isPending} error={createMutation.error?.message} onSubmit={(request) => createMutation.mutate(request)} />}
     {editingEvent && <EventForm initialEvent={editingEvent} submitLabel="Save changes" isPending={updateMutation.isPending} error={updateMutation.error?.message} onSubmit={(request) => updateMutation.mutate({ id: editingEvent.id, request })} />}
     {eventsQuery.isPending && <p className="mt-10 text-stone-600">Loading events...</p>}
     {eventsQuery.isError && <p role="alert" className="mt-10 text-rose-700">{eventsQuery.error.message}</p>}
     {eventsQuery.data?.length === 0 && <p className="mt-10 text-stone-600">No events recorded yet.</p>}
+    {eventsQuery.data && eventsQuery.data.length > 0 && filteredEvents.length === 0 && <p className="mt-10 text-stone-600">No events match these filters. Unknown activity times are not included in date matches.</p>}
     <ul className="mt-8">
-      {eventsQuery.data?.map((event) => <EventListItem key={event.id} event={event} onEdit={() => { setEditingEvent(event); setShowForm(false) }} onDelete={() => deleteMutation.mutate(event.id)} />)}
+      {filteredEvents.map((event) => <EventListItem key={event.id} event={event} onEdit={() => { setEditingEvent(event); setShowForm(false) }} onDelete={() => deleteMutation.mutate(event.id)} />)}
     </ul>
+    {deleteMutation.isError && <p role="alert" className="mt-4 text-rose-700">{deleteMutation.error.message}</p>}
   </section></Layout>
 }
 
@@ -204,7 +264,7 @@ function JournalEventsSection({ journalId, onExtract, isExtracting, extractionEr
 }
 
 function App() {
-  return <Routes><Route path="/" element={<ComposePage />} /><Route path="/journals" element={<JournalHistoryPage />} /><Route path="/journals/:id" element={<JournalDetailPage />} /><Route path="/events" element={<EventsPage />} /><Route path="*" element={<Navigate to="/" replace />} /></Routes>
+  return <Routes><Route path="/" element={<ComposePage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/journals/new" element={<ComposePage />} /><Route path="/journals" element={<JournalHistoryPage />} /><Route path="/journals/:id" element={<JournalDetailPage />} /><Route path="/events" element={<EventsPage />} /><Route path="*" element={<Navigate to="/dashboard" replace />} /></Routes>
 }
 
 export default App
