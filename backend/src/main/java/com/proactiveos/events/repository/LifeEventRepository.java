@@ -1,6 +1,7 @@
 package com.proactiveos.events.repository;
 
 import java.util.List;
+import java.time.Instant;
 
 import com.proactiveos.events.entity.LifeEvent;
 import com.proactiveos.events.entity.EventSource;
@@ -12,6 +13,10 @@ import org.springframework.data.repository.query.Param;
 public interface LifeEventRepository extends JpaRepository<LifeEvent, Long> {
 
     List<LifeEvent> findAllByOrderByEventTimeDesc();
+
+    List<LifeEvent> findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(Instant startInclusive, Instant endExclusive);
+
+    long countByEventTimeIsNull();
 
     List<LifeEvent> findAllByJournalEntryIdOrderByEventTimeDesc(Long journalEntryId);
 

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { journalApi, type Journal } from './api/journalApi'
 import { eventsApi, LIFE_EVENT_TYPES, type LifeEvent, type LifeEventRequest, type LifeEventType } from './api/eventsApi'
+import { getProactiveInsights } from './api/insightsApi'
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(`${value}T00:00:00`))
@@ -53,15 +54,13 @@ function DashboardPage() {
   const today = localDateKey(new Date())
   const journalsQuery = useQuery({ queryKey: ['journals'], queryFn: journalApi.getJournals })
   const eventsQuery = useQuery({ queryKey: ['events'], queryFn: () => eventsApi.getEvents() })
+  const insightsQuery = useQuery({ queryKey: ['insights'], queryFn: getProactiveInsights })
   const journals = journalsQuery.data ?? []
   const events = eventsQuery.data ?? []
   const todayJournals = journals.filter((journal) => journal.entryDate === today)
-  const eventsToday = events.filter((event) => eventDateKey(event.eventTime) === today)
-  const unknownEventTimes = events.filter((event) => event.eventTime === null).length
   const recentEvents = [...events]
     .sort((left, right) => new Date(right.eventTime ?? right.createdAt).getTime() - new Date(left.eventTime ?? left.createdAt).getTime())
     .slice(0, 5)
-  const eventCounts = LIFE_EVENT_TYPES.map((type) => ({ type, count: events.filter((event) => event.type === type).length }))
 
   return <Layout><section className="py-10">
     <p className="text-sm font-semibold tracking-[0.14em] text-teal-700">PROACTIVE OS / OVERVIEW</p>
@@ -69,18 +68,25 @@ function DashboardPage() {
       <div><h1 className="text-4xl font-semibold sm:text-5xl">Your activity</h1><p className="mt-2 text-stone-600">A view of what you have recorded.</p></div>
       <Link to="/" className="bg-teal-700 px-4 py-3 font-semibold text-white transition hover:bg-teal-800">Write a journal</Link>
     </div>
-    {(journalsQuery.isError || eventsQuery.isError) && <p role="alert" className="mt-6 text-rose-700">{journalsQuery.error?.message ?? eventsQuery.error?.message}</p>}
-    {(journalsQuery.isPending || eventsQuery.isPending) && <p className="mt-8 text-stone-600">Loading your activity...</p>}
-    {!journalsQuery.isPending && !eventsQuery.isPending && !journalsQuery.isError && !eventsQuery.isError && <>
+    {(journalsQuery.isError || eventsQuery.isError || insightsQuery.isError) && <p role="alert" className="mt-6 text-rose-700">{journalsQuery.error?.message ?? eventsQuery.error?.message ?? insightsQuery.error?.message}</p>}
+    {(journalsQuery.isPending || eventsQuery.isPending || insightsQuery.isPending) && <p className="mt-8 text-stone-600">Loading your activity...</p>}
+    {!journalsQuery.isPending && !eventsQuery.isPending && !insightsQuery.isPending && !journalsQuery.isError && !eventsQuery.isError && !insightsQuery.isError && insightsQuery.data && <>
       <div className="mt-8 grid gap-px border border-stone-300 bg-stone-300 sm:grid-cols-3">
         <div className="bg-white p-5"><p className="text-sm text-stone-500">Journals today</p><p className="mt-2 text-3xl font-semibold">{todayJournals.length}</p></div>
-        <div className="bg-white p-5"><p className="text-sm text-stone-500">Events today, time known</p><p className="mt-2 text-3xl font-semibold">{eventsToday.length}</p></div>
-        <div className="bg-white p-5"><p className="text-sm text-stone-500">Events with unknown time</p><p className="mt-2 text-3xl font-semibold">{unknownEventTimes}</p></div>
+        <div className="bg-white p-5"><p className="text-sm text-stone-500">Events with known time, last 28 days</p><p className="mt-2 text-3xl font-semibold">{insightsQuery.data.knownTimeEventCount}</p></div>
+        <div className="bg-white p-5"><p className="text-sm text-stone-500">Events with unknown time, all time</p><p className="mt-2 text-3xl font-semibold">{insightsQuery.data.unknownTimeEventCount}</p></div>
       </div>
 
       <section className="mt-10">
-        <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Events by type</h2><Link to="/events" className="text-sm font-medium text-teal-700 underline">View timeline</Link></div>
-        {events.length === 0 ? <p className="mt-4 border-y border-stone-300 py-6 text-stone-600">No events recorded yet. Extract activities from a journal or add an event manually.</p> : <ul className="mt-4 grid gap-x-8 sm:grid-cols-2">{eventCounts.filter(({ count }) => count > 0).map(({ type, count }) => <li key={type} className="flex justify-between border-b border-stone-300 py-3"><span>{type}</span><span className="font-semibold">{count}</span></li>)}</ul>}
+        <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Recorded activity by type</h2><Link to="/events" className="text-sm font-medium text-teal-700 underline">View timeline</Link></div>
+        <p className="mt-1 text-sm text-stone-500">Known event times, {insightsQuery.data.windowStart} through {insightsQuery.data.windowEnd} (UTC).</p>
+        {insightsQuery.data.knownTimeEventCount === 0 ? <p className="mt-4 border-y border-stone-300 py-6 text-stone-600">No dated events in this window. Untimed entries are not assigned an activity date.</p> : <ul className="mt-4 grid gap-x-8 sm:grid-cols-2">{insightsQuery.data.eventCounts.filter(({ count }) => count > 0).map(({ type, count }) => <li key={type} className="flex justify-between border-b border-stone-300 py-3"><span>{type}</span><span className="font-semibold">{count}</span></li>)}</ul>}
+      </section>
+
+      <section className="mt-10">
+        <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Repeated activity observed</h2><span className="text-sm text-stone-500">Last 28 days</span></div>
+        <p className="mt-1 text-sm text-stone-500">Repeated labels recorded on at least 3 distinct dated days. These are observations, not assumed habits.</p>
+        {insightsQuery.data.repeatedActivities.length === 0 ? <p className="mt-4 text-stone-600">Not enough repeated, dated study or workout entries to report a pattern yet.</p> : <ul className="mt-3">{insightsQuery.data.repeatedActivities.map((observation) => <li key={`${observation.type}:${observation.label}`} className="flex flex-wrap justify-between gap-2 border-b border-stone-300 py-3"><span><strong>{observation.type}</strong> · {observation.label}</span><span className="text-stone-600">Recorded on {observation.distinctDays} distinct days ({observation.eventCount} entries)</span></li>)}</ul>}
       </section>
 
       <section className="mt-10">
