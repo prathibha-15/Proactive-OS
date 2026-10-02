@@ -9,6 +9,7 @@ public record ProactiveInsightsResponse(
         long knownTimeEventCount,
         long unknownTimeEventCount,
         List<EventTypeCount> eventCounts,
-        List<RepeatedActivityObservation> repeatedActivities
+        List<RepeatedActivityObservation> repeatedActivities,
+        List<Recommendation> recommendations
 ) {
 }

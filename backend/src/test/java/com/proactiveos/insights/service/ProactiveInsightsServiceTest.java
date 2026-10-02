@@ -17,10 +17,12 @@ import com.proactiveos.events.entity.WaterUnit;
 import com.proactiveos.events.entity.WorkoutEvent;
 import com.proactiveos.events.repository.LifeEventRepository;
 import com.proactiveos.insights.dto.EventTypeCount;
+import com.proactiveos.insights.dto.RecommendationCategory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -30,6 +32,9 @@ class ProactiveInsightsServiceTest {
 
     @Mock
     private LifeEventRepository lifeEventRepository;
+
+        @Spy
+        private RecommendationGenerator recommendationGenerator = new RecommendationGenerator();
 
     @InjectMocks
     private ProactiveInsightsService service;
@@ -72,6 +77,8 @@ class ProactiveInsightsServiceTest {
                     assertThat(observation.label()).isEqualTo("Legs");
                     assertThat(observation.distinctDays()).isEqualTo(3);
                 });
+                assertThat(response.recommendations()).extracting("id").contains(
+                                "study:spring boot", "workout:legs", "data-quality:unknown-event-times");
     }
 
     @Test
@@ -87,6 +94,7 @@ class ProactiveInsightsServiceTest {
 
         assertThat(response.knownTimeEventCount()).isEqualTo(2);
         assertThat(response.repeatedActivities()).isEmpty();
+        assertThat(response.recommendations()).isEmpty();
     }
 
     @Test
@@ -102,6 +110,9 @@ class ProactiveInsightsServiceTest {
         assertThat(response.knownTimeEventCount()).isEqualTo(1);
         assertThat(response.unknownTimeEventCount()).isEqualTo(7);
         assertThat(response.repeatedActivities()).isEmpty();
+        assertThat(response.recommendations()).singleElement()
+                .satisfies(recommendation -> assertThat(recommendation.category())
+                        .isEqualTo(RecommendationCategory.DATA_QUALITY));
     }
 
     @Test
@@ -119,6 +130,7 @@ class ProactiveInsightsServiceTest {
                 new EventTypeCount(LifeEventType.STUDY, 1),
                 new EventTypeCount(LifeEventType.WATER, 1),
                 new EventTypeCount(LifeEventType.WORKOUT, 1));
+        assertThat(response.recommendations()).isEmpty();
     }
 
     @Test
@@ -135,6 +147,7 @@ class ProactiveInsightsServiceTest {
         assertThat(response.eventCounts()).hasSize(LifeEventType.values().length)
                 .allSatisfy(count -> assertThat(count.count()).isZero());
         assertThat(response.repeatedActivities()).isEmpty();
+        assertThat(response.recommendations()).isEmpty();
     }
 
     private StudyEvent study(String subject, LocalDate date, int durationMinutes) {

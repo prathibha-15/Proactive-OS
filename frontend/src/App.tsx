@@ -89,6 +89,14 @@ function DashboardPage() {
         {insightsQuery.data.repeatedActivities.length === 0 ? <p className="mt-4 text-stone-600">Not enough repeated, dated study or workout entries to report a pattern yet.</p> : <ul className="mt-3">{insightsQuery.data.repeatedActivities.map((observation) => <li key={`${observation.type}:${observation.label}`} className="flex flex-wrap justify-between gap-2 border-b border-stone-300 py-3"><span><strong>{observation.type}</strong> · {observation.label}</span><span className="text-stone-600">Recorded on {observation.distinctDays} distinct days ({observation.eventCount} entries)</span></li>)}</ul>}
       </section>
 
+      <section className="mt-10 border-t border-stone-300 pt-8" aria-labelledby="recommendations-heading">
+        <h2 id="recommendations-heading" className="text-2xl font-semibold">Recommendations</h2>
+        <p className="mt-1 text-sm text-stone-500">Generated deterministically from recorded event data. These are observations and optional suggestions, not claims about habits or causes.</p>
+        {insightsQuery.data.recommendations.length === 0
+          ? <p className="mt-4 text-stone-600">There is not enough repeated or untimed event data for a recommendation yet.</p>
+          : <ul className="mt-4 divide-y divide-stone-300">{insightsQuery.data.recommendations.map((recommendation) => <li key={recommendation.id} className="py-4"><p className="text-xs font-semibold uppercase tracking-wide text-teal-700">{recommendation.category.replace('_', ' ')}</p><h3 className="mt-1 text-lg font-semibold">{recommendation.title}</h3><p className="mt-1 text-stone-700">{recommendation.message}</p></li>)}</ul>}
+      </section>
+
       <section className="mt-10">
         <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Recent activity</h2><Link to="/journals" className="text-sm font-medium text-teal-700 underline">Journal history</Link></div>
         {recentEvents.length === 0 ? <p className="mt-4 text-stone-600">Events you extract or add will appear here.</p> : <ul className="mt-3">{recentEvents.map((event) => <li key={event.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-stone-300 py-4"><div><p className="font-semibold text-teal-700">{event.type}</p><p className="mt-1 text-stone-700">{eventSummary(event)}</p><p className="mt-1 text-xs uppercase tracking-wide text-stone-400">Source: {event.source}</p></div><p className="text-sm text-stone-500">{event.eventTime ? formatTimestamp(event.eventTime) : `Activity time unknown · recorded ${formatTimestamp(event.createdAt)}`}</p></li>)}</ul>}

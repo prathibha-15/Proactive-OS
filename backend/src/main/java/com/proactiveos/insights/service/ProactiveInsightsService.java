@@ -20,6 +20,7 @@ import com.proactiveos.events.entity.WorkoutEvent;
 import com.proactiveos.events.repository.LifeEventRepository;
 import com.proactiveos.insights.dto.EventTypeCount;
 import com.proactiveos.insights.dto.ProactiveInsightsResponse;
+import com.proactiveos.insights.dto.Recommendation;
 import com.proactiveos.insights.dto.RepeatedActivityObservation;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,9 +33,12 @@ public class ProactiveInsightsService {
     static final int REPEAT_THRESHOLD_DAYS = 3;
 
     private final LifeEventRepository lifeEventRepository;
+    private final RecommendationGenerator recommendationGenerator;
 
-    public ProactiveInsightsService(LifeEventRepository lifeEventRepository) {
+    public ProactiveInsightsService(LifeEventRepository lifeEventRepository,
+                                    RecommendationGenerator recommendationGenerator) {
         this.lifeEventRepository = lifeEventRepository;
+        this.recommendationGenerator = recommendationGenerator;
     }
 
     public ProactiveInsightsResponse getInsights() {
@@ -58,13 +62,16 @@ public class ProactiveInsightsService {
                 .toList();
 
         List<RepeatedActivityObservation> repeatedActivities = findRepeatedActivities(timedEvents);
+        long unknownTimeEventCount = lifeEventRepository.countByEventTimeIsNull();
+        List<Recommendation> recommendations = recommendationGenerator.generate(repeatedActivities, unknownTimeEventCount);
         return new ProactiveInsightsResponse(
                 windowStart,
                 todayUtc,
                 timedEvents.size(),
-                lifeEventRepository.countByEventTimeIsNull(),
+            unknownTimeEventCount,
                 eventCounts,
-                repeatedActivities);
+            repeatedActivities,
+            recommendations);
     }
 
     private List<RepeatedActivityObservation> findRepeatedActivities(List<LifeEvent> events) {
@@ -75,9 +82,7 @@ public class ProactiveInsightsService {
                 continue;
             }
             ActivityAccumulator accumulator = activities.computeIfAbsent(key, ignored -> new ActivityAccumulator());
-            if (accumulator.displayLabel == null) {
-                accumulator.displayLabel = activityLabel(event).trim();
-            }
+            accumulator.displayLabel = preferredDisplayLabel(accumulator.displayLabel, activityLabel(event).trim());
             accumulator.eventCount++;
             accumulator.days.add(event.getEventTime().atZone(ZoneOffset.UTC).toLocalDate());
         }
@@ -111,6 +116,17 @@ public class ProactiveInsightsService {
         }
         String displayLabel = label.trim();
         return new ActivityKey(type, displayLabel.toLowerCase(Locale.ROOT));
+    }
+
+    private String preferredDisplayLabel(String current, String candidate) {
+        if (current == null) {
+            return candidate;
+        }
+        int caseInsensitiveOrder = String.CASE_INSENSITIVE_ORDER.compare(candidate, current);
+        if (caseInsensitiveOrder < 0 || (caseInsensitiveOrder == 0 && candidate.compareTo(current) < 0)) {
+            return candidate;
+        }
+        return current;
     }
 
     private String activityLabel(LifeEvent event) {

@@ -12,6 +12,15 @@ export type RepeatedActivityObservation = {
   eventCount: number
 }
 
+export type RecommendationCategory = 'STUDY' | 'WORKOUT' | 'DATA_QUALITY'
+
+export type Recommendation = {
+  id: string
+  category: RecommendationCategory
+  title: string
+  message: string
+}
+
 export type ProactiveInsights = {
   windowStart: string
   windowEnd: string
@@ -19,6 +28,7 @@ export type ProactiveInsights = {
   unknownTimeEventCount: number
   eventCounts: EventTypeCount[]
   repeatedActivities: RepeatedActivityObservation[]
+  recommendations: Recommendation[]
 }
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
