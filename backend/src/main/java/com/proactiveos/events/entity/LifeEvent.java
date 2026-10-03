@@ -2,17 +2,21 @@ package com.proactiveos.events.entity;
 
 import java.time.Instant;
 
+import com.proactiveos.auth.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.DiscriminatorColumn;
 import jakarta.persistence.DiscriminatorType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Inheritance;
 import jakarta.persistence.InheritanceType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -51,6 +55,10 @@ public abstract class LifeEvent {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User owner;
+
     protected LifeEvent() {
     }
 
@@ -82,6 +90,10 @@ public abstract class LifeEvent {
         this.confidence = confidence;
     }
 
+    public void assignOwner(User owner) {
+        this.owner = owner;
+    }
+
     public abstract LifeEventType getType();
 
     public Long getId() {
@@ -110,5 +122,9 @@ public abstract class LifeEvent {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public User getOwner() {
+        return owner;
     }
 }

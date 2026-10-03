@@ -10,6 +10,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
+import com.proactiveos.auth.entity.User;
+import com.proactiveos.auth.repository.UserRepository;
 import com.proactiveos.events.repository.LifeEventRepository;
 import com.proactiveos.journal.dto.JournalRequest;
 import com.proactiveos.journal.entity.JournalEntry;
@@ -23,11 +25,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class JournalServiceTest {
 
+    private static final Long OWNER_ID = 7L;
+
     @Mock
     private JournalEntryRepository journalEntryRepository;
 
     @Mock
     private LifeEventRepository lifeEventRepository;
+
+    @Mock
+    private UserRepository userRepository;
 
     @InjectMocks
     private JournalService journalService;
@@ -36,8 +43,9 @@ class JournalServiceTest {
     void createsJournalWithOriginalContent() {
         JournalEntry entry = JournalEntry.create("I studied Spring Boot for two hours.", LocalDate.now());
         when(journalEntryRepository.save(any(JournalEntry.class))).thenReturn(entry);
+        when(userRepository.getReferenceById(OWNER_ID)).thenReturn(User.create("owner@example.com", "hash"));
 
-        var response = journalService.create(new JournalRequest("I studied Spring Boot for two hours."));
+        var response = journalService.create(OWNER_ID, new JournalRequest("I studied Spring Boot for two hours."));
 
         assertThat(response.content()).isEqualTo("I studied Spring Boot for two hours.");
         assertThat(response.entryDate()).isEqualTo(LocalDate.now());
@@ -47,17 +55,17 @@ class JournalServiceTest {
     @Test
     void retrievesJournal() {
         JournalEntry entry = JournalEntry.create("A journal entry", LocalDate.now());
-        when(journalEntryRepository.findById(1L)).thenReturn(Optional.of(entry));
+        when(journalEntryRepository.findByIdAndOwner_Id(1L, OWNER_ID)).thenReturn(Optional.of(entry));
 
-        assertThat(journalService.findById(1L).content()).isEqualTo("A journal entry");
+        assertThat(journalService.findById(OWNER_ID, 1L).content()).isEqualTo("A journal entry");
     }
 
     @Test
     void updatesJournalContent() {
         JournalEntry entry = JournalEntry.create("Before", LocalDate.now());
-        when(journalEntryRepository.findById(1L)).thenReturn(Optional.of(entry));
+        when(journalEntryRepository.findByIdAndOwner_Id(1L, OWNER_ID)).thenReturn(Optional.of(entry));
 
-        var response = journalService.update(1L, new JournalRequest("After"));
+        var response = journalService.update(OWNER_ID, 1L, new JournalRequest("After"));
 
         assertThat(response.content()).isEqualTo("After");
     }
@@ -65,9 +73,9 @@ class JournalServiceTest {
     @Test
     void deletesJournal() {
         JournalEntry entry = JournalEntry.create("Delete me", LocalDate.now());
-        when(journalEntryRepository.findById(1L)).thenReturn(Optional.of(entry));
+        when(journalEntryRepository.findByIdAndOwner_Id(1L, OWNER_ID)).thenReturn(Optional.of(entry));
 
-        journalService.delete(1L);
+        journalService.delete(OWNER_ID, 1L);
 
         verify(journalEntryRepository).delete(entry);
     }
@@ -75,26 +83,26 @@ class JournalServiceTest {
     @Test
     void detachesLifeEventsWithoutDeletingThemWhenJournalIsDeleted() {
         JournalEntry entry = JournalEntry.create("Delete me", LocalDate.now());
-        when(journalEntryRepository.findById(1L)).thenReturn(Optional.of(entry));
+        when(journalEntryRepository.findByIdAndOwner_Id(1L, OWNER_ID)).thenReturn(Optional.of(entry));
 
-        journalService.delete(1L);
+        journalService.delete(OWNER_ID, 1L);
 
-        verify(lifeEventRepository).detachFromJournal(1L);
+        verify(lifeEventRepository).detachFromJournal(1L, OWNER_ID);
     }
 
     @Test
     void returnsJournalList() {
-        when(journalEntryRepository.findAllByOrderByEntryDateDescCreatedAtDesc())
+        when(journalEntryRepository.findAllByOwner_IdOrderByEntryDateDescCreatedAtDesc(OWNER_ID))
                 .thenReturn(List.of(JournalEntry.create("First", LocalDate.now())));
 
-        assertThat(journalService.findAll()).extracting(response -> response.content()).containsExactly("First");
+        assertThat(journalService.findAll(OWNER_ID)).extracting(response -> response.content()).containsExactly("First");
     }
 
     @Test
     void rejectsMissingJournal() {
-        when(journalEntryRepository.findById(99L)).thenReturn(Optional.empty());
+        when(journalEntryRepository.findByIdAndOwner_Id(99L, OWNER_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> journalService.findById(99L))
+        assertThatThrownBy(() -> journalService.findById(OWNER_ID, 99L))
                 .isInstanceOf(JournalNotFoundException.class);
     }
 }

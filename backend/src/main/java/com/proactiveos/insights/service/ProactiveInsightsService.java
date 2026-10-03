@@ -41,16 +41,16 @@ public class ProactiveInsightsService {
         this.recommendationGenerator = recommendationGenerator;
     }
 
-    public ProactiveInsightsResponse getInsights() {
-        return getInsights(LocalDate.now(ZoneOffset.UTC));
+    public ProactiveInsightsResponse getInsights(Long ownerId) {
+        return getInsights(ownerId, LocalDate.now(ZoneOffset.UTC));
     }
 
-    ProactiveInsightsResponse getInsights(LocalDate todayUtc) {
+    ProactiveInsightsResponse getInsights(Long ownerId, LocalDate todayUtc) {
         LocalDate windowStart = todayUtc.minusDays(WINDOW_DAYS - 1L);
         Instant startInclusive = windowStart.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant endExclusive = todayUtc.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         List<LifeEvent> timedEvents = lifeEventRepository
-                .findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(startInclusive, endExclusive);
+            .findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(ownerId, startInclusive, endExclusive);
 
         Map<LifeEventType, Long> counts = new EnumMap<>(LifeEventType.class);
         for (LifeEventType type : LifeEventType.values()) {
@@ -62,7 +62,7 @@ public class ProactiveInsightsService {
                 .toList();
 
         List<RepeatedActivityObservation> repeatedActivities = findRepeatedActivities(timedEvents);
-        long unknownTimeEventCount = lifeEventRepository.countByEventTimeIsNull();
+        long unknownTimeEventCount = lifeEventRepository.countByOwner_IdAndEventTimeIsNull(ownerId);
         List<Recommendation> recommendations = recommendationGenerator.generate(repeatedActivities, unknownTimeEventCount);
         return new ProactiveInsightsResponse(
                 windowStart,

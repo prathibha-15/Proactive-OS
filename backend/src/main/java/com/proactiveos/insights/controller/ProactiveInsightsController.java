@@ -2,6 +2,8 @@ package com.proactiveos.insights.controller;
 
 import com.proactiveos.insights.dto.ProactiveInsightsResponse;
 import com.proactiveos.insights.service.ProactiveInsightsService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,7 +19,7 @@ public class ProactiveInsightsController {
     }
 
     @GetMapping
-    public ProactiveInsightsResponse getInsights() {
-        return proactiveInsightsService.getInsights();
+    public ProactiveInsightsResponse getInsights(@AuthenticationPrincipal Jwt principal) {
+        return proactiveInsightsService.getInsights(Long.valueOf(principal.getSubject()));
     }
 }

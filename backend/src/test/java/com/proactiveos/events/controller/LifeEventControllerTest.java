@@ -3,6 +3,7 @@ package com.proactiveos.events.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -35,13 +36,13 @@ class LifeEventControllerTest {
 
     @Test
     void createsValidEvent() throws Exception {
-        when(lifeEventService.create(any())).thenReturn(studyResponse());
+        when(lifeEventService.create(eq(7L), any())).thenReturn(studyResponse());
 
         mockMvc.perform(post("/api/events")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"type":"STUDY","source":"MANUAL","subject":"Spring Boot","durationMinutes":120}
-                                """))
+                                """).with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.subject").value("Spring Boot"));
     }
@@ -52,35 +53,40 @@ class LifeEventControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"source":"MANUAL","quantity":-1}
-                                """))
+                                """).with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
-    void returnsNotFoundForMissingEvent() throws Exception {
-        when(lifeEventService.findById(99L)).thenThrow(new LifeEventNotFoundException(99L));
+    void rejectsUnauthenticatedEventReads() throws Exception {
+        mockMvc.perform(get("/api/events")).andExpect(status().isUnauthorized());
+    }
 
-        mockMvc.perform(get("/api/events/99"))
+    @Test
+    void returnsNotFoundForMissingEvent() throws Exception {
+        when(lifeEventService.findById(7L, 99L)).thenThrow(new LifeEventNotFoundException(99L));
+
+        mockMvc.perform(get("/api/events/99").with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.title").value("Life event not found"));
     }
 
     @Test
     void updatesEvent() throws Exception {
-        when(lifeEventService.update(eq(1L), any())).thenReturn(studyResponse());
+        when(lifeEventService.update(eq(7L), eq(1L), any())).thenReturn(studyResponse());
 
         mockMvc.perform(put("/api/events/1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"type":"STUDY","source":"MANUAL","subject":"Spring Boot","durationMinutes":120}
-                                """))
+                                """).with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subject").value("Spring Boot"));
     }
 
     @Test
     void deletesEvent() throws Exception {
-        mockMvc.perform(delete("/api/events/1"))
+        mockMvc.perform(delete("/api/events/1").with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isNoContent());
     }
 

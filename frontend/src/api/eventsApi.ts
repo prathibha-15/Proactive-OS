@@ -1,3 +1,5 @@
+import { getAccessToken, handleUnauthorized } from './authApi'
+
 export type EventSource = 'JOURNAL' | 'MANUAL' | 'DEVICE'
 export type LifeEventType = 'SLEEP' | 'WATER' | 'FOOD' | 'STUDY' | 'WORKOUT' | 'STEPS' | 'JOB_APPLICATION' | 'MOOD'
 export type WaterUnit = 'GLASS' | 'ML' | 'LITER'
@@ -54,12 +56,14 @@ export type LifeEventRequest = {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = getAccessToken()
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options?.headers },
     ...options,
   })
 
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized()
     const problem = await response.json().catch(() => null) as { detail?: string } | null
     throw new Error(problem?.detail ?? 'Something went wrong. Please try again.')
   }

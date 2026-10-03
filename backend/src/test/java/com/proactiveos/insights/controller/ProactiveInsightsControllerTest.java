@@ -4,6 +4,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -31,18 +32,23 @@ class ProactiveInsightsControllerTest {
 
     @Test
     void returnsReadOnlyProactiveInsights() throws Exception {
-        when(proactiveInsightsService.getInsights()).thenReturn(new ProactiveInsightsResponse(
+        when(proactiveInsightsService.getInsights(7L)).thenReturn(new ProactiveInsightsResponse(
                 LocalDate.of(2026, 9, 4), LocalDate.of(2026, 10, 1), 5, 2,
             List.of(new EventTypeCount(LifeEventType.STUDY, 3)), List.of(),
             List.of(new Recommendation("data-quality:unknown-event-times", RecommendationCategory.DATA_QUALITY,
                 "Some activity times are unknown", "2 logged events have no activity time."))));
 
-        mockMvc.perform(get("/api/insights"))
+        mockMvc.perform(get("/api/insights").with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.knownTimeEventCount").value(5))
                 .andExpect(jsonPath("$.unknownTimeEventCount").value(2))
                 .andExpect(jsonPath("$.eventCounts[0].type").value("STUDY"))
                 .andExpect(jsonPath("$.recommendations[0].id").value("data-quality:unknown-event-times"))
                 .andExpect(jsonPath("$.recommendations[0].category").value("DATA_QUALITY"));
+    }
+
+    @Test
+    void rejectsUnauthenticatedInsightsReads() throws Exception {
+        mockMvc.perform(get("/api/insights")).andExpect(status().isUnauthorized());
     }
 }

@@ -3,6 +3,8 @@ package com.proactiveos.extraction;
 import java.util.List;
 
 import com.proactiveos.events.dto.EventResponse;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,7 +21,7 @@ public class JournalExtractionController {
     }
 
     @PostMapping("/{journalId}/extract")
-    public List<EventResponse> extract(@PathVariable Long journalId) {
-        return journalExtractionService.extract(journalId);
+    public List<EventResponse> extract(@AuthenticationPrincipal Jwt principal, @PathVariable Long journalId) {
+        return journalExtractionService.extract(Long.valueOf(principal.getSubject()), journalId);
     }
 }

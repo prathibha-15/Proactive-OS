@@ -12,17 +12,21 @@ import org.springframework.data.repository.query.Param;
 
 public interface LifeEventRepository extends JpaRepository<LifeEvent, Long> {
 
-    List<LifeEvent> findAllByOrderByEventTimeDesc();
+    List<LifeEvent> findAllByOwner_IdOrderByEventTimeDesc(Long ownerId);
 
-    List<LifeEvent> findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(Instant startInclusive, Instant endExclusive);
+    List<LifeEvent> findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(
+            Long ownerId, Instant startInclusive, Instant endExclusive);
 
-    long countByEventTimeIsNull();
+    long countByOwner_IdAndEventTimeIsNull(Long ownerId);
 
-    List<LifeEvent> findAllByJournalEntryIdOrderByEventTimeDesc(Long journalEntryId);
+    List<LifeEvent> findAllByJournalEntryIdAndOwner_IdOrderByEventTimeDesc(Long journalEntryId, Long ownerId);
 
-    List<LifeEvent> findAllByJournalEntryIdAndSource(Long journalEntryId, EventSource source);
+    List<LifeEvent> findAllByJournalEntryIdAndSourceAndOwner_Id(Long journalEntryId, EventSource source,
+                                                                 Long ownerId);
+
+    java.util.Optional<LifeEvent> findByIdAndOwner_Id(Long id, Long ownerId);
 
     @Modifying
-    @Query("update LifeEvent e set e.journalEntryId = null where e.journalEntryId = :journalEntryId")
-    void detachFromJournal(@Param("journalEntryId") Long journalEntryId);
+    @Query("update LifeEvent e set e.journalEntryId = null where e.journalEntryId = :journalEntryId and e.owner.id = :ownerId")
+    void detachFromJournal(@Param("journalEntryId") Long journalEntryId, @Param("ownerId") Long ownerId);
 }

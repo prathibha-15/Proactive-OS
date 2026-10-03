@@ -1,5 +1,13 @@
 package com.proactiveos.extraction;
 
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -34,7 +42,7 @@ public class ExtractionResponseParser {
         this.validator = new SpringValidatorAdapter(validator);
     }
 
-    public List<EventRequest> parseAndValidate(String json, Long journalEntryId) {
+    public List<EventRequest> parseAndValidate(String json, Long journalEntryId, LocalDate journalDate, ZoneId timeZone) {
         try {
             JsonNode root = strictMapper.readTree(json);
             if (root == null || !root.isObject() || root.size() != 1 || !root.has("events") || !root.get("events").isArray()) {
@@ -53,12 +61,15 @@ public class ExtractionResponseParser {
                 });
                 JsonNode eventTime = eventNode.get("eventTime");
                 if (eventTime != null && !eventTime.isNull() && !eventTime.isTextual()) {
-                    throw new AiExtractionException("AI event time must be an ISO-8601 string or null.");
+                    throw new AiExtractionException("AI event time must be a local ISO-8601 date-time, an offset date-time, or null.");
                 }
+                String eventTimeValue = eventTime == null || eventTime.isNull() ? null : eventTime.textValue();
 
-                ((com.fasterxml.jackson.databind.node.ObjectNode) eventNode).remove(List.of("source", "journalEntryId"));
+                ((com.fasterxml.jackson.databind.node.ObjectNode) eventNode)
+                    .remove(List.of("source", "journalEntryId", "eventTime"));
                 EventRequest parsed = strictMapper.treeToValue(eventNode, EventRequest.class);
-                EventRequest normalized = normalize(parsed, journalEntryId);
+                EventRequest normalized = normalize(parsed, journalEntryId,
+                    parseEventTime(eventTimeValue, journalDate, timeZone));
                 validate(normalized);
                 requests.add(normalized);
             }
@@ -68,9 +79,42 @@ public class ExtractionResponseParser {
         }
     }
 
-    private EventRequest normalize(EventRequest request, Long journalEntryId) {
+    private Instant parseEventTime(String value, LocalDate journalDate, ZoneId timeZone) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(value).toInstant();
+        } catch (DateTimeParseException ignored) {
+            try {
+                LocalDateTime localDateTime = LocalDateTime.parse(value);
+                return resolveLocalDateTime(localDateTime, timeZone);
+            } catch (DateTimeParseException exception) {
+                try {
+                    return resolveLocalDateTime(LocalTime.parse(value).atDate(journalDate), timeZone);
+                } catch (DateTimeParseException timeException) {
+                    throw new AiExtractionException(
+                            "AI event time must be a valid ISO-8601 local time, local date-time, or offset date-time.",
+                            timeException);
+                }
+            }
+        }
+    }
+
+    private Instant resolveLocalDateTime(LocalDateTime localDateTime, ZoneId timeZone) {
+        List<ZoneOffset> offsets = timeZone.getRules().getValidOffsets(localDateTime);
+        if (offsets.isEmpty()) {
+            throw new AiExtractionException("AI event time falls in a nonexistent local time for the configured time zone.");
+        }
+        if (offsets.size() > 1) {
+            return null;
+        }
+        return localDateTime.toInstant(offsets.getFirst());
+    }
+
+    private EventRequest normalize(EventRequest request, Long journalEntryId, Instant eventTime) {
         return new EventRequest(
-                request.type(), EventSource.JOURNAL, journalEntryId, request.eventTime(), request.confidence(),
+                request.type(), EventSource.JOURNAL, journalEntryId, eventTime, request.confidence(),
                 request.subject(), request.durationMinutes(), request.quantity(), request.unit(),
                 request.description(), request.calories(), request.activityType(), request.count(),
                 request.company(), request.role(), request.status(), request.mood(), request.notes(),

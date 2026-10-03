@@ -7,5 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface JournalEntryRepository extends JpaRepository<JournalEntry, Long> {
 
-    List<JournalEntry> findAllByOrderByEntryDateDescCreatedAtDesc();
+    List<JournalEntry> findAllByOwner_IdOrderByEntryDateDescCreatedAtDesc(Long ownerId);
+
+    java.util.Optional<JournalEntry> findByIdAndOwner_Id(Long id, Long ownerId);
 }

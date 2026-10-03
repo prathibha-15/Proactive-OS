@@ -42,8 +42,8 @@ public class JournalExtractionService {
         this.properties = properties;
     }
 
-    public List<EventResponse> extract(Long journalId) {
-        JournalEntry journal = journalEntryRepository.findById(journalId)
+    public List<EventResponse> extract(Long ownerId, Long journalId) {
+        JournalEntry journal = journalEntryRepository.findByIdAndOwner_Id(journalId, ownerId)
                 .orElseThrow(() -> new JournalNotFoundException(journalId));
         ZoneId timeZone;
         try {
@@ -58,7 +58,7 @@ public class JournalExtractionService {
             stage = "validation";
             List<EventRequest> validatedRequests;
             try {
-                validatedRequests = parser.parseAndValidate(json, journalId);
+                validatedRequests = parser.parseAndValidate(json, journalId, journal.getEntryDate(), timeZone);
             } catch (AiExtractionException exception) {
                 if (logRawResponse) {
                     logRawResponse(json, journal.getContent());
@@ -66,7 +66,7 @@ public class JournalExtractionService {
                 throw exception;
             }
             stage = "persistence";
-            return lifeEventService.replaceJournalEvents(journalId, validatedRequests);
+            return lifeEventService.replaceJournalEvents(ownerId, journalId, validatedRequests);
         } catch (AiExtractionException exception) {
             log.warn("Journal extraction failed for journal {} during {}: {}", journalId, stage,
                     exception.getClass().getSimpleName());

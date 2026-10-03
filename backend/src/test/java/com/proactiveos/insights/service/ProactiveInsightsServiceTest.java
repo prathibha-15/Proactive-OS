@@ -29,6 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ProactiveInsightsServiceTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 1);
+        private static final Long OWNER_ID = 7L;
 
     @Mock
     private LifeEventRepository lifeEventRepository;
@@ -50,12 +51,12 @@ class ProactiveInsightsServiceTest {
                 workout("Legs", TODAY.minusDays(5)),
                 workout("Legs", TODAY.minusDays(8)),
                 water(TODAY.minusDays(3), 2));
-        when(lifeEventRepository.findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(
+        when(lifeEventRepository.findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(OWNER_ID,
                 TODAY.minusDays(27).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 TODAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant())).thenReturn(events);
-        when(lifeEventRepository.countByEventTimeIsNull()).thenReturn(2L);
+        when(lifeEventRepository.countByOwner_IdAndEventTimeIsNull(OWNER_ID)).thenReturn(2L);
 
-        var response = service.getInsights(TODAY);
+        var response = service.getInsights(OWNER_ID, TODAY);
 
         assertThat(response.windowStart()).isEqualTo(TODAY.minusDays(27));
         assertThat(response.windowEnd()).isEqualTo(TODAY);
@@ -83,14 +84,14 @@ class ProactiveInsightsServiceTest {
 
     @Test
     void sparseOccurrencesDoNotProduceARepeatedActivityObservation() {
-        when(lifeEventRepository.findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(
+        when(lifeEventRepository.findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(OWNER_ID,
                 TODAY.minusDays(27).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 TODAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()))
                 .thenReturn(List.of(study("Spring Boot", TODAY.minusDays(1), 30),
                         study("Spring Boot", TODAY.minusDays(1), 60)));
-        when(lifeEventRepository.countByEventTimeIsNull()).thenReturn(0L);
+        when(lifeEventRepository.countByOwner_IdAndEventTimeIsNull(OWNER_ID)).thenReturn(0L);
 
-        var response = service.getInsights(TODAY);
+        var response = service.getInsights(OWNER_ID, TODAY);
 
         assertThat(response.knownTimeEventCount()).isEqualTo(2);
         assertThat(response.repeatedActivities()).isEmpty();
@@ -99,13 +100,13 @@ class ProactiveInsightsServiceTest {
 
     @Test
     void unknownEventTimesAreNotAssignedToTheWindowOrPatternDates() {
-        when(lifeEventRepository.findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(
+        when(lifeEventRepository.findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(OWNER_ID,
                 TODAY.minusDays(27).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 TODAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()))
                 .thenReturn(List.of(study("Spring Boot", TODAY.minusDays(1), 60)));
-        when(lifeEventRepository.countByEventTimeIsNull()).thenReturn(7L);
+        when(lifeEventRepository.countByOwner_IdAndEventTimeIsNull(OWNER_ID)).thenReturn(7L);
 
-        var response = service.getInsights(TODAY);
+        var response = service.getInsights(OWNER_ID, TODAY);
 
         assertThat(response.knownTimeEventCount()).isEqualTo(1);
         assertThat(response.unknownTimeEventCount()).isEqualTo(7);
@@ -117,14 +118,14 @@ class ProactiveInsightsServiceTest {
 
     @Test
     void multipleEventTypesAreCountedIndependently() {
-        when(lifeEventRepository.findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(
+        when(lifeEventRepository.findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(OWNER_ID,
                 TODAY.minusDays(27).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 TODAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant()))
                 .thenReturn(List.of(study("Math", TODAY.minusDays(1), 40), water(TODAY.minusDays(1), 1),
                         workout("Walk", TODAY.minusDays(1))));
-        when(lifeEventRepository.countByEventTimeIsNull()).thenReturn(0L);
+        when(lifeEventRepository.countByOwner_IdAndEventTimeIsNull(OWNER_ID)).thenReturn(0L);
 
-        var response = service.getInsights(TODAY);
+        var response = service.getInsights(OWNER_ID, TODAY);
 
         assertThat(response.eventCounts()).filteredOn(count -> count.count() > 0).containsExactlyInAnyOrder(
                 new EventTypeCount(LifeEventType.STUDY, 1),
@@ -135,12 +136,12 @@ class ProactiveInsightsServiceTest {
 
     @Test
     void returnsZeroCountsAndNoObservationsWhenThereIsNoData() {
-        when(lifeEventRepository.findAllByEventTimeGreaterThanEqualAndEventTimeLessThan(
+        when(lifeEventRepository.findAllByOwner_IdAndEventTimeGreaterThanEqualAndEventTimeLessThan(OWNER_ID,
                 TODAY.minusDays(27).atStartOfDay(ZoneOffset.UTC).toInstant(),
                 TODAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant())).thenReturn(List.of());
-        when(lifeEventRepository.countByEventTimeIsNull()).thenReturn(0L);
+        when(lifeEventRepository.countByOwner_IdAndEventTimeIsNull(OWNER_ID)).thenReturn(0L);
 
-        var response = service.getInsights(TODAY);
+        var response = service.getInsights(OWNER_ID, TODAY);
 
         assertThat(response.knownTimeEventCount()).isZero();
         assertThat(response.unknownTimeEventCount()).isZero();

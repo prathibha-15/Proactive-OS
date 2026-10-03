@@ -27,6 +27,7 @@ import com.proactiveos.events.entity.WaterUnit;
 import com.proactiveos.events.repository.LifeEventRepository;
 import com.proactiveos.events.service.LifeEventMapper;
 import com.proactiveos.events.service.LifeEventService;
+import com.proactiveos.auth.repository.UserRepository;
 import com.proactiveos.journal.entity.JournalEntry;
 import com.proactiveos.journal.repository.JournalEntryRepository;
 import com.proactiveos.journal.service.JournalNotFoundException;
@@ -45,6 +46,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 class JournalExtractionServiceTest {
 
     private static final Long JOURNAL_ID = 42L;
+        private static final Long OWNER_ID = 7L;
     private static final LocalDate ENTRY_DATE = LocalDate.of(2026, 9, 28);
 
     @Mock
@@ -56,6 +58,9 @@ class JournalExtractionServiceTest {
     @Mock
     private AiExtractionService aiExtractionService;
 
+        @Mock
+        private UserRepository userRepository;
+
         private ExtractionResponseParser parser;
     private JournalExtractionService extractionService;
 
@@ -63,17 +68,18 @@ class JournalExtractionServiceTest {
     void setUp() {
         var validator = Validation.buildDefaultValidatorFactory().getValidator();
         parser = new ExtractionResponseParser(new ObjectMapper().registerModule(new JavaTimeModule()), validator);
-        var eventService = new LifeEventService(lifeEventRepository, journalEntryRepository, new LifeEventMapper());
+        var eventService = new LifeEventService(lifeEventRepository, journalEntryRepository, userRepository,
+                new LifeEventMapper());
         extractionService = new JournalExtractionService(
                 journalEntryRepository,
                 aiExtractionService,
                 parser,
                 eventService,
                 new AiProviderProperties("", "", "", "UTC"));
-        Mockito.lenient().when(journalEntryRepository.findById(JOURNAL_ID)).thenReturn(Optional.of(
+        Mockito.lenient().when(journalEntryRepository.findByIdAndOwner_Id(JOURNAL_ID, OWNER_ID)).thenReturn(Optional.of(
                 JournalEntry.create("I studied Spring Boot and drank water.", ENTRY_DATE)));
-        Mockito.lenient().when(journalEntryRepository.existsById(JOURNAL_ID)).thenReturn(true);
-        Mockito.lenient().when(lifeEventRepository.findAllByJournalEntryIdAndSource(JOURNAL_ID, EventSource.JOURNAL))
+        Mockito.lenient().when(lifeEventRepository.findAllByJournalEntryIdAndSourceAndOwner_Id(
+                JOURNAL_ID, EventSource.JOURNAL, OWNER_ID))
                 .thenReturn(List.of());
         Mockito.lenient().when(lifeEventRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
     }
@@ -89,7 +95,7 @@ class JournalExtractionServiceTest {
                         ]}
                         """);
 
-        var results = extractionService.extract(JOURNAL_ID);
+        var results = extractionService.extract(OWNER_ID, JOURNAL_ID);
 
         assertThat(results).extracting("type")
                 .containsExactly(LifeEventType.STUDY, LifeEventType.WATER, LifeEventType.JOB_APPLICATION);
@@ -103,33 +109,33 @@ class JournalExtractionServiceTest {
         assertThat(((WaterEvent) captor.getValue().get(1)).getUnit()).isEqualTo(WaterUnit.GLASS);
     }
 
-        @Test
-        void extractsLegAndGlutesWorkoutWithoutInventingAnExactDurationFromMoreThanThirtyMinutes() {
-                String journalText = "Leg+Glutes workout(>30 mins)";
-                Mockito.when(journalEntryRepository.findById(JOURNAL_ID)).thenReturn(Optional.of(
-                                JournalEntry.create(journalText, ENTRY_DATE)));
-                when(aiExtractionService.extract(journalText, ENTRY_DATE, ZoneId.of("UTC")))
-                                .thenReturn("""
-                                        {"events":[{"type":"WORKOUT","eventTime":null,"confidence":null,
-                                        "subject":null,"durationMinutes":null,"quantity":null,"unit":null,
-                                        "description":null,"calories":null,"activityType":"Leg+Glutes",
-                                        "count":null,"company":null,"role":null,"status":null,"mood":null,
-                                        "notes":null,"applicationCount":null}]}
-                                        """);
+    @Test
+    void extractsLegAndGlutesWorkoutWithoutInventingAnExactDurationFromMoreThanThirtyMinutes() {
+        String journalText = "Leg+Glutes workout(>30 mins)";
+        Mockito.when(journalEntryRepository.findByIdAndOwner_Id(JOURNAL_ID, OWNER_ID)).thenReturn(Optional.of(
+                JournalEntry.create(journalText, ENTRY_DATE)));
+        when(aiExtractionService.extract(journalText, ENTRY_DATE, ZoneId.of("UTC")))
+                .thenReturn("""
+                        {"events":[{"type":"WORKOUT","eventTime":null,"confidence":null,
+                        "subject":null,"durationMinutes":null,"quantity":null,"unit":null,
+                        "description":null,"calories":null,"activityType":"Leg+Glutes",
+                        "count":null,"company":null,"role":null,"status":null,"mood":null,
+                        "notes":null,"applicationCount":null}]}
+                        """);
 
-                var results = extractionService.extract(JOURNAL_ID);
+        var results = extractionService.extract(OWNER_ID, JOURNAL_ID);
 
-                assertThat(results).hasSize(1);
-                assertThat(results.getFirst().type()).isEqualTo(LifeEventType.WORKOUT);
-                assertThat(results.getFirst().activityType()).isEqualTo("Leg+Glutes");
-                assertThat(results.getFirst().durationMinutes()).isNull();
-                assertThat(results.getFirst().source()).isEqualTo(EventSource.JOURNAL);
-        }
+        assertThat(results).hasSize(1);
+        assertThat(results.getFirst().type()).isEqualTo(LifeEventType.WORKOUT);
+        assertThat(results.getFirst().activityType()).isEqualTo("Leg+Glutes");
+        assertThat(results.getFirst().durationMinutes()).isNull();
+        assertThat(results.getFirst().source()).isEqualTo(EventSource.JOURNAL);
+    }
 
         @Test
         void rejectsNonNullCrossTypeFieldsInSchemaCompleteWorkoutObject() {
                 String journalText = "Leg+Glutes workout(>30 mins)";
-                Mockito.when(journalEntryRepository.findById(JOURNAL_ID)).thenReturn(Optional.of(
+                Mockito.when(journalEntryRepository.findByIdAndOwner_Id(JOURNAL_ID, OWNER_ID)).thenReturn(Optional.of(
                                 JournalEntry.create(journalText, ENTRY_DATE)));
                 when(aiExtractionService.extract(journalText, ENTRY_DATE, ZoneId.of("UTC")))
                                 .thenReturn("""
@@ -140,7 +146,7 @@ class JournalExtractionServiceTest {
                                         "notes":null,"applicationCount":null}]}
                                         """);
 
-                assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+                assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                                 .isInstanceOf(AiExtractionException.class)
                                 .hasMessageContaining("fields that do not apply to event type WORKOUT");
                 verify(lifeEventRepository, never()).saveAll(anyList());
@@ -151,7 +157,7 @@ class JournalExtractionServiceTest {
         void acceptsTheExpectedTopLevelEventsArrayShape() {
                 List<EventRequest> requests = parser.parseAndValidate("""
                                 {"events":[{"type":"STUDY","subject":"Spring Boot","durationMinutes":120}]}
-                                """, JOURNAL_ID);
+                                """, JOURNAL_ID, ENTRY_DATE, ZoneId.of("UTC"));
 
                 assertThat(requests).hasSize(1);
                 assertThat(requests.getFirst().type()).isEqualTo(LifeEventType.STUDY);
@@ -164,7 +170,8 @@ class JournalExtractionServiceTest {
         @Test
         void stillRejectsAdditionalTopLevelJsonProperties() {
                 assertThatThrownBy(() -> parser.parseAndValidate(
-                                "{\"events\":[],\"explanation\":\"extra text\"}", JOURNAL_ID))
+                                "{\"events\":[],\"explanation\":\"extra text\"}", JOURNAL_ID,
+                                ENTRY_DATE, ZoneId.of("UTC")))
                                 .isInstanceOf(AiExtractionException.class)
                                 .hasMessageContaining("only an events array");
         }
@@ -173,13 +180,14 @@ class JournalExtractionServiceTest {
         void optInSchemaInvalidJsonDiagnosticRedactsApiKeyAndJournalText() {
                 String apiKey = "test-provider-key";
                 String journalText = "I studied private subject matter.";
-                Mockito.when(journalEntryRepository.findById(JOURNAL_ID)).thenReturn(Optional.of(
+                Mockito.when(journalEntryRepository.findByIdAndOwner_Id(JOURNAL_ID, OWNER_ID)).thenReturn(Optional.of(
                                 JournalEntry.create(journalText, ENTRY_DATE)));
                 extractionService = new JournalExtractionService(
                                 journalEntryRepository,
                                 aiExtractionService,
                                 parser,
-                                new LifeEventService(lifeEventRepository, journalEntryRepository, new LifeEventMapper()),
+                                new LifeEventService(lifeEventRepository, journalEntryRepository, userRepository,
+                                                new LifeEventMapper()),
                                 new AiProviderProperties("https://provider.test/openai", "test-model", apiKey, "UTC"));
                 ReflectionTestUtils.setField(extractionService, "logRawResponse", true);
                 String schemaInvalidResponse = "{\"result\":\"not an events array\",\"token\":\"" + apiKey
@@ -191,7 +199,7 @@ class JournalExtractionServiceTest {
                 appender.start();
                 logger.addAppender(appender);
                 try {
-                        assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+                        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                                         .isInstanceOf(AiExtractionException.class)
                                         .hasMessageContaining("only an events array");
 
@@ -212,7 +220,7 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[]}");
 
-        assertThat(extractionService.extract(JOURNAL_ID)).isEmpty();
+        assertThat(extractionService.extract(OWNER_ID, JOURNAL_ID)).isEmpty();
         verify(lifeEventRepository).deleteAll(List.of());
         verify(lifeEventRepository).saveAll(List.of());
     }
@@ -222,7 +230,7 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("not json");
 
-        assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                 .isInstanceOf(AiExtractionException.class)
                 .hasMessageContaining("valid extraction JSON");
         verify(lifeEventRepository, never()).deleteAll(anyList());
@@ -234,7 +242,7 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[{\"type\":\"TELEPORT\"}]}");
 
-        assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                 .isInstanceOf(AiExtractionException.class);
         verify(lifeEventRepository, never()).deleteAll(anyList());
     }
@@ -244,29 +252,29 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[{\"type\":\"WATER\",\"quantity\":-2,\"unit\":\"GLASS\"}]}");
 
-        assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                 .isInstanceOf(AiExtractionException.class)
                 .hasMessageContaining("invalid event data");
         verify(lifeEventRepository, never()).deleteAll(anyList());
     }
 
-        @Test
-        void rejectsNonIsoEventTimeBeforePersistence() {
-                when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
-                                .thenReturn("{\"events\":[{\"type\":\"STUDY\",\"subject\":\"Spring Boot\",\"eventTime\":123456}]}");
+    @Test
+    void rejectsNonIsoEventTimeBeforePersistence() {
+        when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
+                .thenReturn("{\"events\":[{\"type\":\"STUDY\",\"subject\":\"Spring Boot\",\"eventTime\":123456}]}");
 
-                assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
-                                .isInstanceOf(AiExtractionException.class)
-                                .hasMessageContaining("ISO-8601");
-                verify(lifeEventRepository, never()).deleteAll(anyList());
-        }
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
+                .isInstanceOf(AiExtractionException.class)
+                .hasMessageContaining("ISO-8601");
+        verify(lifeEventRepository, never()).deleteAll(anyList());
+    }
 
     @Test
     void preservesUnknownOptionalFieldsAsNullAndDoesNotInventAnEventTime() {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[{\"type\":\"STUDY\",\"subject\":\"Spring Boot\"}]}");
 
-        var result = extractionService.extract(JOURNAL_ID).getFirst();
+        var result = extractionService.extract(OWNER_ID, JOURNAL_ID).getFirst();
 
         assertThat(result.durationMinutes()).isNull();
         assertThat(result.eventTime()).isNull();
@@ -277,7 +285,7 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[{\"type\":\"STUDY\",\"source\":\"DEVICE\",\"subject\":\"Spring Boot\"}]}");
 
-        var result = extractionService.extract(JOURNAL_ID).getFirst();
+        var result = extractionService.extract(OWNER_ID, JOURNAL_ID).getFirst();
 
         assertThat(result.source()).isEqualTo(EventSource.JOURNAL);
         assertThat(result.journalEntryId()).isEqualTo(JOURNAL_ID);
@@ -288,8 +296,8 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[{\"type\":\"STUDY\",\"subject\":\"Spring Boot\"}]}");
 
-        extractionService.extract(JOURNAL_ID);
-        extractionService.extract(JOURNAL_ID);
+        extractionService.extract(OWNER_ID, JOURNAL_ID);
+        extractionService.extract(OWNER_ID, JOURNAL_ID);
 
         verify(lifeEventRepository, times(2)).deleteAll(List.of());
         verify(lifeEventRepository, times(2)).saveAll(anyList());
@@ -300,7 +308,7 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenThrow(new AiExtractionException("provider unavailable"));
 
-        assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                 .isInstanceOf(AiExtractionException.class)
                 .hasMessage("provider unavailable");
         verify(journalEntryRepository, never()).save(org.mockito.ArgumentMatchers.any());
@@ -310,9 +318,9 @@ class JournalExtractionServiceTest {
 
     @Test
     void rejectsMissingJournalBeforeCallingTheProvider() {
-        when(journalEntryRepository.findById(99L)).thenReturn(Optional.empty());
+        when(journalEntryRepository.findByIdAndOwner_Id(99L, OWNER_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> extractionService.extract(99L))
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, 99L))
                 .isInstanceOf(JournalNotFoundException.class);
         verify(aiExtractionService, never()).extract(org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
@@ -323,7 +331,7 @@ class JournalExtractionServiceTest {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[{\"type\":\"STUDY\",\"subject\":\"Spring Boot\",\"durationHours\":2}]}");
 
-        assertThatThrownBy(() -> extractionService.extract(JOURNAL_ID))
+        assertThatThrownBy(() -> extractionService.extract(OWNER_ID, JOURNAL_ID))
                 .isInstanceOf(AiExtractionException.class)
                 .hasMessageContaining("unsupported event field");
         verify(lifeEventRepository, never()).deleteAll(anyList());
@@ -333,9 +341,9 @@ class JournalExtractionServiceTest {
     void modelCannotChangeTheOriginalJournalContent() {
         when(aiExtractionService.extract("I studied Spring Boot and drank water.", ENTRY_DATE, ZoneId.of("UTC")))
                 .thenReturn("{\"events\":[]}");
-        var journal = journalEntryRepository.findById(JOURNAL_ID).orElseThrow();
+        var journal = journalEntryRepository.findByIdAndOwner_Id(JOURNAL_ID, OWNER_ID).orElseThrow();
 
-        extractionService.extract(JOURNAL_ID);
+        extractionService.extract(OWNER_ID, JOURNAL_ID);
 
         assertThat(journal.getContent()).isEqualTo("I studied Spring Boot and drank water.");
         verify(journalEntryRepository, never()).save(org.mockito.ArgumentMatchers.any());

@@ -1,11 +1,13 @@
 package com.proactiveos.journal.controller;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,11 +33,12 @@ class JournalControllerTest {
 
     @Test
     void createsValidJournal() throws Exception {
-        when(journalService.create(any())).thenReturn(response());
+        when(journalService.create(eq(7L), any())).thenReturn(response());
 
         mockMvc.perform(post("/api/journals")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"Today I studied Spring Boot.\"}"))
+                        .content("{\"content\":\"Today I studied Spring Boot.\"}")
+                        .with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.content").value("Today I studied Spring Boot."));
     }
@@ -44,17 +47,23 @@ class JournalControllerTest {
     void rejectsBlankContent() throws Exception {
         mockMvc.perform(post("/api/journals")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"   \"}"))
+                        .content("{\"content\":\"   \"}")
+                        .with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void returnsNotFoundForMissingJournal() throws Exception {
-        when(journalService.findById(99L)).thenThrow(new JournalNotFoundException(99L));
+        when(journalService.findById(7L, 99L)).thenThrow(new JournalNotFoundException(99L));
 
-        mockMvc.perform(get("/api/journals/99"))
+        mockMvc.perform(get("/api/journals/99").with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.title").value("Journal entry not found"));
+    }
+
+    @Test
+    void rejectsUnauthenticatedJournalReads() throws Exception {
+        mockMvc.perform(get("/api/journals")).andExpect(status().isUnauthorized());
     }
 
     private JournalResponse response() {

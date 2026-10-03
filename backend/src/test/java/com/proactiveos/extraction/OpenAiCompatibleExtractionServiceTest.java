@@ -271,7 +271,19 @@ class OpenAiCompatibleExtractionServiceTest {
                                                         .contains("STEPS: count")
                                                         .contains("JOB_APPLICATION: company, role, status, applicationCount")
                                                         .contains("MOOD: mood, notes")
-                                                        .contains("omit durationMinutes");
+                                                        .contains("journal-local ISO-8601 date-time YYYY-MM-DDTHH:mm:ss")
+                                                        .contains("Extract an independent time for each event")
+                                                        .contains("Support 12-hour AM/PM and 24-hour clocks")
+                                                        .contains("For a range, eventTime is the start")
+                                                        .contains("A vague period alone")
+                                                        .contains("this morning")
+                                                        .contains("around 8 PM")
+                                                        .contains("40 minutes\" to 40")
+                                                        .contains("about 2 hours")
+                                                        .contains("1.5 hours = 90")
+                                                        .contains("Inequalities/lower bounds")
+                                                        .contains("eventTime is only a clearly stated sleep onset")
+                                                        .contains("Never infer sleep duration from separate sleep and wake times");
                                         assertThat(root.path("messages").get(1).path("role").asText()).isEqualTo("user");
                                         assertThat(root.path("messages").get(1).path("content").asText())
                                                         .isEqualTo("Journal entry date: 2026-09-28\nTime zone: Asia/Kolkata\nJournal text:\n" + journalText);

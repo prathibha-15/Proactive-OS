@@ -1,9 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { clearLogin, getAccessToken, getStoredUser, login, register, storeLogin, type AuthUser } from './api/authApi'
 import { journalApi, type Journal } from './api/journalApi'
 import { eventsApi, LIFE_EVENT_TYPES, type LifeEvent, type LifeEventRequest, type LifeEventType } from './api/eventsApi'
 import { getProactiveInsights } from './api/insightsApi'
+
+const appTimeZone = import.meta.env.VITE_APP_TIME_ZONE || 'UTC'
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(new Date(`${value}T00:00:00`))
@@ -11,7 +14,7 @@ function formatDate(value: string) {
 
 function formatTimestamp(value: string | null) {
   if (!value) return 'Time unknown'
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: appTimeZone }).format(new Date(value))
 }
 
 function localDateKey(value: Date) {
@@ -22,11 +25,72 @@ function localDateKey(value: Date) {
 }
 
 function eventDateKey(value: string | null) {
-  return value ? localDateKey(new Date(value)) : null
+  if (!value) return null
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: appTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(value))
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+  return year && month && day ? `${year}-${month}-${day}` : null
 }
 
-function Layout({ children }: { children: React.ReactNode }) {
-  return <main className="min-h-screen bg-stone-50 px-5 py-8 text-stone-950 sm:px-10 sm:py-10"><div className="mx-auto max-w-4xl"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-300 pb-5"><Link to="/dashboard" className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</Link><nav aria-label="Main navigation" className="flex flex-wrap gap-x-5 gap-y-2"><Link to="/dashboard" className="text-sm font-medium text-stone-600 hover:text-teal-700">Overview</Link><Link to="/" className="text-sm font-medium text-stone-600 hover:text-teal-700">Write journal</Link><Link to="/journals" className="text-sm font-medium text-stone-600 hover:text-teal-700">Journals</Link><Link to="/events" className="text-sm font-medium text-stone-600 hover:text-teal-700">Life events</Link></nav></header>{children}</div></main>
+function compareTimelineEvents(left: LifeEvent, right: LifeEvent) {
+  if (left.eventTime && right.eventTime) return Date.parse(right.eventTime) - Date.parse(left.eventTime)
+  if (left.eventTime) return -1
+  if (right.eventTime) return 1
+  return Date.parse(right.createdAt) - Date.parse(left.createdAt)
+}
+
+function Layout({ children, user, onLogout }: { children: React.ReactNode, user: AuthUser, onLogout: () => void }) {
+  return <main className="min-h-screen bg-stone-50 px-5 py-8 text-stone-950 sm:px-10 sm:py-10"><div className="mx-auto max-w-4xl"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-300 pb-5"><Link to="/dashboard" className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</Link><nav aria-label="Main navigation" className="flex flex-wrap items-center gap-x-5 gap-y-2"><Link to="/dashboard" className="text-sm font-medium text-stone-600 hover:text-teal-700">Overview</Link><Link to="/" className="text-sm font-medium text-stone-600 hover:text-teal-700">Write journal</Link><Link to="/journals" className="text-sm font-medium text-stone-600 hover:text-teal-700">Journals</Link><Link to="/events" className="text-sm font-medium text-stone-600 hover:text-teal-700">Life events</Link><span className="text-sm text-stone-500">{user.email}</span><button onClick={onLogout} className="text-sm font-medium text-teal-700 underline">Sign out</button></nav></header>{children}</div></main>
+}
+
+function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+  const user = getStoredUser()
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  if (!getAccessToken() || !user) return <Navigate to="/login" replace />
+  function logout() {
+    clearLogin()
+    queryClient.clear()
+    navigate('/login', { replace: true })
+  }
+  return <Layout user={user} onLogout={logout}>{children}</Layout>
+}
+
+function AuthPage() {
+  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
+  const queryClient = useQueryClient()
+  const destination = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/dashboard'
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setPending(true)
+    setError('')
+    try {
+      if (mode === 'register') await register(email, password)
+      const response = await login(email, password)
+      storeLogin(response)
+      queryClient.clear()
+      navigate(destination, { replace: true })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Authentication failed.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return <main className="min-h-screen bg-stone-50 px-5 py-12 text-stone-950 sm:px-10"><section className="mx-auto max-w-md border-t-4 border-teal-700 bg-white p-7 shadow-sm"><p className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</p><h1 className="mt-6 text-3xl font-semibold">{mode === 'login' ? 'Sign in' : 'Create account'}</h1><p className="mt-2 text-stone-600">Your journals and activity are private to your account.</p><div className="mt-6 flex border-b border-stone-300"><button type="button" onClick={() => { setMode('login'); setError('') }} aria-pressed={mode === 'login'} className="border-b-2 border-transparent px-4 py-2 text-sm aria-pressed:border-teal-700 aria-pressed:font-semibold">Sign in</button><button type="button" onClick={() => { setMode('register'); setError('') }} aria-pressed={mode === 'register'} className="border-b-2 border-transparent px-4 py-2 text-sm aria-pressed:border-teal-700 aria-pressed:font-semibold">Create account</button></div><form onSubmit={submit} className="mt-6 space-y-4"><div><label htmlFor="email" className="text-sm font-semibold">Email</label><input id="email" type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} className="mt-1 block w-full border border-stone-300 p-3 outline-none focus:border-teal-700" /></div><div><label htmlFor="password" className="text-sm font-semibold">Password</label><input id="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={8} maxLength={72} value={password} onChange={(event) => setPassword(event.target.value)} className="mt-1 block w-full border border-stone-300 p-3 outline-none focus:border-teal-700" />{mode === 'register' && <p className="mt-1 text-xs text-stone-500">Use at least 8 characters.</p>}</div>{error && <p role="alert" className="text-sm text-rose-700">{error}</p>}<button type="submit" disabled={pending} className="w-full bg-teal-700 px-4 py-3 font-semibold text-white hover:bg-teal-800 disabled:bg-stone-400">{pending ? 'Please wait...' : mode === 'login' ? 'Sign in' : 'Create account'}</button></form></section></main>
 }
 
 function JournalForm({ initialContent = '', submitLabel, onSubmit, isPending, error }: { initialContent?: string, submitLabel: string, onSubmit: (content: string) => void, isPending: boolean, error?: string }) {
@@ -45,24 +109,25 @@ function JournalForm({ initialContent = '', submitLabel, onSubmit, isPending, er
 function ComposePage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const createMutation = useMutation({ mutationFn: journalApi.createJournal, onSuccess: (journal) => { queryClient.invalidateQueries({ queryKey: ['journals'] }); navigate(`/journals/${journal.id}`) } })
+  const createMutation = useMutation({ mutationFn: journalApi.createJournal, onSuccess: (journal) => { queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id] }); navigate(`/journals/${journal.id}`) } })
 
-  return <Layout><JournalForm submitLabel="Save journal" isPending={createMutation.isPending} error={createMutation.error?.message} onSubmit={(content) => createMutation.mutate({ content })} /></Layout>
+  return <AuthenticatedLayout><JournalForm submitLabel="Save journal" isPending={createMutation.isPending} error={createMutation.error?.message} onSubmit={(content) => createMutation.mutate({ content })} /></AuthenticatedLayout>
 }
 
 function DashboardPage() {
+  const userId = getStoredUser()?.id
   const today = localDateKey(new Date())
-  const journalsQuery = useQuery({ queryKey: ['journals'], queryFn: journalApi.getJournals })
-  const eventsQuery = useQuery({ queryKey: ['events'], queryFn: () => eventsApi.getEvents() })
-  const insightsQuery = useQuery({ queryKey: ['insights'], queryFn: getProactiveInsights })
+  const journalsQuery = useQuery({ queryKey: ['user', userId, 'journals'], queryFn: journalApi.getJournals })
+  const eventsQuery = useQuery({ queryKey: ['user', userId, 'events'], queryFn: () => eventsApi.getEvents() })
+  const insightsQuery = useQuery({ queryKey: ['user', userId, 'insights'], queryFn: getProactiveInsights })
   const journals = journalsQuery.data ?? []
   const events = eventsQuery.data ?? []
   const todayJournals = journals.filter((journal) => journal.entryDate === today)
   const recentEvents = [...events]
-    .sort((left, right) => new Date(right.eventTime ?? right.createdAt).getTime() - new Date(left.eventTime ?? left.createdAt).getTime())
+    .sort(compareTimelineEvents)
     .slice(0, 5)
 
-  return <Layout><section className="py-10">
+  return <AuthenticatedLayout><section className="py-10">
     <p className="text-sm font-semibold tracking-[0.14em] text-teal-700">PROACTIVE OS / OVERVIEW</p>
     <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
       <div><h1 className="text-4xl font-semibold sm:text-5xl">Your activity</h1><p className="mt-2 text-stone-600">A view of what you have recorded.</p></div>
@@ -102,13 +167,14 @@ function DashboardPage() {
         {recentEvents.length === 0 ? <p className="mt-4 text-stone-600">Events you extract or add will appear here.</p> : <ul className="mt-3">{recentEvents.map((event) => <li key={event.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-stone-300 py-4"><div><p className="font-semibold text-teal-700">{event.type}</p><p className="mt-1 text-stone-700">{eventSummary(event)}</p><p className="mt-1 text-xs uppercase tracking-wide text-stone-400">Source: {event.source}</p></div><p className="text-sm text-stone-500">{event.eventTime ? formatTimestamp(event.eventTime) : `Activity time unknown · recorded ${formatTimestamp(event.createdAt)}`}</p></li>)}</ul>}
       </section>
     </>}
-  </section></Layout>
+  </section></AuthenticatedLayout>
 }
 
 function JournalHistoryPage() {
-  const journalsQuery = useQuery({ queryKey: ['journals'], queryFn: journalApi.getJournals })
+  const userId = getStoredUser()?.id
+  const journalsQuery = useQuery({ queryKey: ['user', userId, 'journals'], queryFn: journalApi.getJournals })
 
-  return <Layout><section className="py-10"><p className="text-sm font-semibold tracking-[0.14em] text-teal-700">YOUR JOURNALS</p><h1 className="mt-3 text-4xl font-semibold sm:text-5xl">History</h1>{journalsQuery.isPending && <p className="mt-10 text-stone-600">Loading journals...</p>}{journalsQuery.isError && <p role="alert" className="mt-10 text-rose-700">{journalsQuery.error.message}</p>}{journalsQuery.data?.length === 0 && <div className="mt-10 border-y border-stone-300 py-10"><p className="text-xl font-semibold">Your journal is ready when you are.</p><Link className="mt-4 inline-block text-teal-700 underline" to="/">Write your first entry</Link></div>}<div className="mt-8 divide-y divide-stone-300">{journalsQuery.data?.map((journal) => <JournalListItem key={journal.id} journal={journal} />)}</div></section></Layout>
+  return <AuthenticatedLayout><section className="py-10"><p className="text-sm font-semibold tracking-[0.14em] text-teal-700">YOUR JOURNALS</p><h1 className="mt-3 text-4xl font-semibold sm:text-5xl">History</h1>{journalsQuery.isPending && <p className="mt-10 text-stone-600">Loading journals...</p>}{journalsQuery.isError && <p role="alert" className="mt-10 text-rose-700">{journalsQuery.error.message}</p>}{journalsQuery.data?.length === 0 && <div className="mt-10 border-y border-stone-300 py-10"><p className="text-xl font-semibold">Your journal is ready when you are.</p><Link className="mt-4 inline-block text-teal-700 underline" to="/">Write your first entry</Link></div>}<div className="mt-8 divide-y divide-stone-300">{journalsQuery.data?.map((journal) => <JournalListItem key={journal.id} journal={journal} />)}</div></section></AuthenticatedLayout>
 }
 
 function JournalListItem({ journal }: { journal: Journal }) {
@@ -120,18 +186,19 @@ function JournalDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const journalQuery = useQuery({ queryKey: ['journals', id], queryFn: () => journalApi.getJournal(id!), enabled: Boolean(id), retry: false })
-  const updateMutation = useMutation({ mutationFn: (content: string) => journalApi.updateJournal(Number(id), { content }), onSuccess: (journal) => { queryClient.setQueryData(['journals', id], journal); queryClient.invalidateQueries({ queryKey: ['journals'] }); setEditing(false) } })
-  const deleteMutation = useMutation({ mutationFn: () => journalApi.deleteJournal(Number(id)), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['journals'] }); navigate('/journals') } })
-  const extractMutation = useMutation({ mutationFn: () => eventsApi.extractJournalEvents(Number(id)), onSuccess: (events) => { queryClient.setQueryData(['journals', Number(id), 'events'], events); queryClient.invalidateQueries({ queryKey: ['events'] }) } })
+  const userId = getStoredUser()?.id
+  const journalQuery = useQuery({ queryKey: ['user', userId, 'journals', id], queryFn: () => journalApi.getJournal(id!), enabled: Boolean(id), retry: false })
+  const updateMutation = useMutation({ mutationFn: (content: string) => journalApi.updateJournal(Number(id), { content }), onSuccess: (journal) => { queryClient.setQueryData(['user', getStoredUser()?.id, 'journals', id], journal); queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id, 'journals'] }); setEditing(false) } })
+  const deleteMutation = useMutation({ mutationFn: () => journalApi.deleteJournal(Number(id)), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id] }); navigate('/journals') } })
+  const extractMutation = useMutation({ mutationFn: () => eventsApi.extractJournalEvents(Number(id)), onSuccess: (events) => { queryClient.setQueryData(['user', getStoredUser()?.id, 'journals', Number(id), 'events'], events); queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id] }) } })
   const [editing, setEditing] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
-  if (journalQuery.isPending) return <Layout><p className="py-10 text-stone-600">Loading journal...</p></Layout>
-  if (journalQuery.isError) return <Layout><p role="alert" className="py-10 text-rose-700">{journalQuery.error.message}</p><Link className="text-teal-700 underline" to="/journals">Back to history</Link></Layout>
+  if (journalQuery.isPending) return <AuthenticatedLayout><p className="py-10 text-stone-600">Loading journal...</p></AuthenticatedLayout>
+  if (journalQuery.isError) return <AuthenticatedLayout><p role="alert" className="py-10 text-rose-700">{journalQuery.error.message}</p><Link className="text-teal-700 underline" to="/journals">Back to history</Link></AuthenticatedLayout>
   const journal = journalQuery.data
 
-  return <Layout><article className="py-10"><Link to="/journals" className="text-sm font-medium text-teal-700 hover:underline">Back to history</Link><p className="mt-8 text-sm font-semibold tracking-[0.14em] text-teal-700">{formatDate(journal.entryDate)}</p>{editing ? <JournalForm initialContent={journal.content} submitLabel="Save changes" isPending={updateMutation.isPending} error={updateMutation.error?.message} onSubmit={(content) => updateMutation.mutate(content)} /> : <><div className="mt-6 whitespace-pre-wrap text-xl leading-9 text-stone-800">{journal.content}</div><p className="mt-8 text-sm text-stone-500">Created {formatTimestamp(journal.createdAt)}{journal.updatedAt !== journal.createdAt && ` | Updated ${formatTimestamp(journal.updatedAt)}`}</p><div className="mt-8 flex flex-wrap gap-3"><button onClick={() => setEditing(true)} className="border border-stone-400 px-4 py-2 font-medium hover:border-teal-700">Edit</button><button onClick={() => setConfirmingDelete(true)} className="border border-rose-300 px-4 py-2 font-medium text-rose-700 hover:bg-rose-50">Delete</button></div></>}{confirmingDelete && <div role="dialog" aria-modal="true" className="mt-8 border-l-4 border-rose-600 bg-rose-50 p-5"><p className="font-semibold">Delete this journal entry?</p><p className="mt-1 text-sm text-stone-600">This cannot be undone.</p><div className="mt-4 flex gap-3"><button onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} className="bg-rose-700 px-4 py-2 font-medium text-white disabled:bg-stone-300">{deleteMutation.isPending ? 'Deleting...' : 'Delete entry'}</button><button onClick={() => setConfirmingDelete(false)} disabled={deleteMutation.isPending} className="px-4 py-2 font-medium">Cancel</button></div>{deleteMutation.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{deleteMutation.error.message}</p>}</div>}<JournalEventsSection journalId={Number(id)} onExtract={() => extractMutation.mutate()} isExtracting={extractMutation.isPending} extractionError={extractMutation.error?.message} /></article></Layout>
+  return <AuthenticatedLayout><article className="py-10"><Link to="/journals" className="text-sm font-medium text-teal-700 hover:underline">Back to history</Link><p className="mt-8 text-sm font-semibold tracking-[0.14em] text-teal-700">{formatDate(journal.entryDate)}</p>{editing ? <JournalForm initialContent={journal.content} submitLabel="Save changes" isPending={updateMutation.isPending} error={updateMutation.error?.message} onSubmit={(content) => updateMutation.mutate(content)} /> : <><div className="mt-6 whitespace-pre-wrap text-xl leading-9 text-stone-800">{journal.content}</div><p className="mt-8 text-sm text-stone-500">Created {formatTimestamp(journal.createdAt)}{journal.updatedAt !== journal.createdAt && ` | Updated ${formatTimestamp(journal.updatedAt)}`}</p><div className="mt-8 flex flex-wrap gap-3"><button onClick={() => setEditing(true)} className="border border-stone-400 px-4 py-2 font-medium hover:border-teal-700">Edit</button><button onClick={() => setConfirmingDelete(true)} className="border border-rose-300 px-4 py-2 font-medium text-rose-700 hover:bg-rose-50">Delete</button></div></>}{confirmingDelete && <div role="dialog" aria-modal="true" className="mt-8 border-l-4 border-rose-600 bg-rose-50 p-5"><p className="font-semibold">Delete this journal entry?</p><p className="mt-1 text-sm text-stone-600">This cannot be undone.</p><div className="mt-4 flex gap-3"><button onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending} className="bg-rose-700 px-4 py-2 font-medium text-white disabled:bg-stone-300">{deleteMutation.isPending ? 'Deleting...' : 'Delete entry'}</button><button onClick={() => setConfirmingDelete(false)} disabled={deleteMutation.isPending} className="px-4 py-2 font-medium">Cancel</button></div>{deleteMutation.isError && <p role="alert" className="mt-3 text-sm text-rose-700">{deleteMutation.error.message}</p>}</div>}<JournalEventsSection journalId={Number(id)} onExtract={() => extractMutation.mutate()} isExtracting={extractMutation.isPending} extractionError={extractMutation.error?.message} /></article></AuthenticatedLayout>
 }
 
 type EventFieldConfig = { name: keyof LifeEventRequest, label: string, kind: 'text' | 'number' | 'select', options?: string[] }
@@ -222,19 +289,22 @@ function EventListItem({ event, onEdit, onDelete }: { event: LifeEvent, onEdit: 
 }
 
 function EventsPage() {
+  const userId = getStoredUser()?.id
   const queryClient = useQueryClient()
   const [typeFilter, setTypeFilter] = useState<LifeEventType | ''>('')
   const [eventDate, setEventDate] = useState('')
   const [editingEvent, setEditingEvent] = useState<LifeEvent | null>(null)
   const [showForm, setShowForm] = useState(false)
 
-  const eventsQuery = useQuery({ queryKey: ['events', typeFilter], queryFn: () => eventsApi.getEvents(typeFilter || undefined) })
-  const createMutation = useMutation({ mutationFn: eventsApi.createEvent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); setShowForm(false) } })
-  const updateMutation = useMutation({ mutationFn: ({ id, request }: { id: number, request: LifeEventRequest }) => eventsApi.updateEvent(id, request), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['events'] }); setEditingEvent(null) } })
-  const deleteMutation = useMutation({ mutationFn: eventsApi.deleteEvent, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['events'] }) })
-  const filteredEvents = (eventsQuery.data ?? []).filter((event) => !eventDate || eventDateKey(event.eventTime) === eventDate)
+  const eventsQuery = useQuery({ queryKey: ['user', userId, 'events', typeFilter], queryFn: () => eventsApi.getEvents(typeFilter || undefined) })
+  const createMutation = useMutation({ mutationFn: eventsApi.createEvent, onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id] }); setShowForm(false) } })
+  const updateMutation = useMutation({ mutationFn: ({ id, request }: { id: number, request: LifeEventRequest }) => eventsApi.updateEvent(id, request), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id] }); setEditingEvent(null) } })
+  const deleteMutation = useMutation({ mutationFn: eventsApi.deleteEvent, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user', getStoredUser()?.id] }) })
+  const filteredEvents = [...(eventsQuery.data ?? [])]
+    .sort(compareTimelineEvents)
+    .filter((event) => !eventDate || eventDateKey(event.eventTime) === eventDate)
 
-  return <Layout><section className="py-10">
+  return <AuthenticatedLayout><section className="py-10">
     <p className="text-sm font-semibold tracking-[0.14em] text-teal-700">LIFE EVENTS</p>
     <h1 className="mt-3 text-4xl font-semibold sm:text-5xl">Events</h1>
     <div className="mt-6 flex flex-wrap items-center gap-4">
@@ -246,7 +316,7 @@ function EventsPage() {
       {(typeFilter || eventDate) && <button onClick={() => { setTypeFilter(''); setEventDate('') }} className="text-sm font-medium text-teal-700 underline">Clear filters</button>}
       <button onClick={() => { setShowForm((current) => !current); setEditingEvent(null) }} className="border border-stone-400 px-4 py-2 font-medium hover:border-teal-700">{showForm ? 'Cancel' : 'Add event'}</button>
     </div>
-    <p className="mt-3 text-sm text-stone-500">Date filters use known activity times; events with unknown times remain unfiltered only when no date is selected.</p>
+    <p className="mt-3 text-sm text-stone-500">Date filters use known activity times in {appTimeZone}; unknown-time events stay visible only when no date is selected.</p>
     {showForm && <EventForm submitLabel="Save event" isPending={createMutation.isPending} error={createMutation.error?.message} onSubmit={(request) => createMutation.mutate(request)} />}
     {editingEvent && <EventForm initialEvent={editingEvent} submitLabel="Save changes" isPending={updateMutation.isPending} error={updateMutation.error?.message} onSubmit={(request) => updateMutation.mutate({ id: editingEvent.id, request })} />}
     {eventsQuery.isPending && <p className="mt-10 text-stone-600">Loading events...</p>}
@@ -257,11 +327,12 @@ function EventsPage() {
       {filteredEvents.map((event) => <EventListItem key={event.id} event={event} onEdit={() => { setEditingEvent(event); setShowForm(false) }} onDelete={() => deleteMutation.mutate(event.id)} />)}
     </ul>
     {deleteMutation.isError && <p role="alert" className="mt-4 text-rose-700">{deleteMutation.error.message}</p>}
-  </section></Layout>
+  </section></AuthenticatedLayout>
 }
 
 function JournalEventsSection({ journalId, onExtract, isExtracting, extractionError }: { journalId: number, onExtract: () => void, isExtracting: boolean, extractionError?: string }) {
-  const eventsQuery = useQuery({ queryKey: ['journals', journalId, 'events'], queryFn: () => eventsApi.getJournalEvents(journalId), enabled: Number.isFinite(journalId) })
+  const userId = getStoredUser()?.id
+  const eventsQuery = useQuery({ queryKey: ['user', userId, 'journals', journalId, 'events'], queryFn: () => eventsApi.getJournalEvents(journalId), enabled: Number.isFinite(journalId) })
 
   return <section className="mt-10 border-t border-stone-300 pt-8">
     <div className="flex flex-wrap items-center justify-between gap-4"><p className="text-sm font-semibold tracking-[0.14em] text-teal-700">LIFE EVENTS FROM THIS ENTRY</p><button onClick={onExtract} disabled={isExtracting} className="bg-teal-700 px-4 py-2 font-semibold text-white transition hover:bg-teal-800 disabled:cursor-wait disabled:bg-stone-400">{isExtracting ? 'Extracting...' : 'Extract activities'}</button></div>
@@ -278,7 +349,7 @@ function JournalEventsSection({ journalId, onExtract, isExtracting, extractionEr
 }
 
 function App() {
-  return <Routes><Route path="/" element={<ComposePage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/journals/new" element={<ComposePage />} /><Route path="/journals" element={<JournalHistoryPage />} /><Route path="/journals/:id" element={<JournalDetailPage />} /><Route path="/events" element={<EventsPage />} /><Route path="*" element={<Navigate to="/dashboard" replace />} /></Routes>
+  return <Routes><Route path="/login" element={<AuthPage />} /><Route path="/" element={<ComposePage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/journals/new" element={<ComposePage />} /><Route path="/journals" element={<JournalHistoryPage />} /><Route path="/journals/:id" element={<JournalDetailPage />} /><Route path="/events" element={<EventsPage />} /><Route path="*" element={<Navigate to="/dashboard" replace />} /></Routes>
 }
 
 export default App

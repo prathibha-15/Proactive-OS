@@ -11,7 +11,6 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.regex.Pattern;
 
-import org.springframework.http.HttpHeaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -64,7 +63,8 @@ public class OpenAiCompatibleExtractionService implements AiExtractionService {
                 properties declared in the schema. Use null for unknown values and for every property not applicable
                 to the selected event type. Never omit required schema properties and never invent values.
                 Extract only these event types and event-specific fields:
-                SLEEP: durationMinutes, notes. Put explicitly stated sleep/wake clock details in notes.
+                SLEEP: durationMinutes, notes. eventTime is only a clearly stated sleep onset (went to bed/fell asleep).
+                Put explicitly stated wake times in notes; if only waking is stated, leave eventTime null. Never infer sleep duration from separate sleep and wake times.
                 WATER: quantity, unit.
                 FOOD: description, calories.
                 STUDY: subject, durationMinutes.
@@ -75,10 +75,19 @@ public class OpenAiCompatibleExtractionService implements AiExtractionService {
                 Only fields listed for the selected type may be non-null. All other event-specific fields MUST be null;
                 do not populate them merely because they are available in the shared schema. eventTime and confidence
                 are shared fields and may be non-null only when directly supported by the journal.
-                For every durationMinutes value, use it only when the journal states an exact duration. For ranges,
-                approximate durations, or inequalities such as ">30 mins", omit durationMinutes; never round or
-                turn a lower/upper bound into an exact duration; use null instead.
-                {\"events\":[{\"type\":\"SLEEP|WATER|FOOD|STUDY|WORKOUT|STEPS|JOB_APPLICATION|MOOD\",\"eventTime\":\"ISO-8601 instant or null\",\"confidence\":0.0,\"subject\":null,\"durationMinutes\":null,\"quantity\":null,\"unit\":null,\"description\":null,\"calories\":null,\"activityType\":null,\"count\":null,\"company\":null,\"role\":null,\"status\":null,\"mood\":null,\"notes\":null,\"applicationCount\":null}]}
+                eventTime represents the event's start/activity time. Extract an independent time for each event. When the
+                text gives a clock time without an offset, resolve its full local date using the journal date and the
+                supplied time zone, then return YYYY-MM-DDTHH:mm:ss with no offset. The server converts that wall time
+                to UTC. Preserve clock precision: "around 8 PM" may be represented as 20:00:00; never add unsupported
+                minutes or seconds. Support 12-hour AM/PM and 24-hour clocks. For a range, eventTime is the start.
+                Resolve explicit relative dates (today, yesterday, last night) only when context identifies one date.
+                A vague period alone ("this morning", "in the morning", "this afternoon", "in the evening", "later", "sometime today")
+                is not a clock time: set eventTime null. If date or time remains ambiguous, set eventTime null.
+                For durationMinutes, convert explicit durations such as "40 minutes" to 40 and sensible approximations
+                such as "about 2 hours" to minutes (120); convert decimal hours exactly (1.5 hours = 90). Derive a duration from explicit start
+                and end times only when both endpoints and the elapsed interval are unambiguous. Inequalities/lower bounds
+                such as ">30 mins" are not exact durations: set durationMinutes null. Never fabricate precision.
+                {\"events\":[{\"type\":\"SLEEP|WATER|FOOD|STUDY|WORKOUT|STEPS|JOB_APPLICATION|MOOD\",\"eventTime\":\"journal-local ISO-8601 date-time YYYY-MM-DDTHH:mm:ss or null\",\"confidence\":0.0,\"subject\":null,\"durationMinutes\":null,\"quantity\":null,\"unit\":null,\"description\":null,\"calories\":null,\"activityType\":null,\"count\":null,\"company\":null,\"role\":null,\"status\":null,\"mood\":null,\"notes\":null,\"applicationCount\":null}]}
                 Do not return source or journalEntryId. Never advise, diagnose, infer unsupported values, or add defaults.
                 Resolve relative dates/times only from the supplied journal date and time zone.
                 If a clock time/date cannot be resolved reliably, set eventTime to null. A walk alone does not imply

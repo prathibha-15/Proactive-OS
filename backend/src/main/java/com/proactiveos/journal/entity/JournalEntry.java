@@ -3,11 +3,15 @@ package com.proactiveos.journal.entity;
 import java.time.Instant;
 import java.time.LocalDate;
 
+import com.proactiveos.auth.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
@@ -31,16 +35,25 @@ public class JournalEntry {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User owner;
+
     protected JournalEntry() {
     }
 
-    private JournalEntry(String content, LocalDate entryDate) {
+    private JournalEntry(String content, LocalDate entryDate, User owner) {
         this.content = content;
         this.entryDate = entryDate;
+        this.owner = owner;
     }
 
     public static JournalEntry create(String content, LocalDate entryDate) {
-        return new JournalEntry(content, entryDate);
+        return new JournalEntry(content, entryDate, null);
+    }
+
+    public static JournalEntry create(String content, LocalDate entryDate, User owner) {
+        return new JournalEntry(content, entryDate, owner);
     }
 
     @PrePersist
@@ -73,5 +86,9 @@ public class JournalEntry {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public User getOwner() {
+        return owner;
     }
 }

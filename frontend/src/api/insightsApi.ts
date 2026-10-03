@@ -1,4 +1,5 @@
 import type { LifeEventType } from './eventsApi'
+import { getAccessToken, handleUnauthorized } from './authApi'
 
 export type EventTypeCount = {
   type: LifeEventType
@@ -34,8 +35,12 @@ export type ProactiveInsights = {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 export async function getProactiveInsights(): Promise<ProactiveInsights> {
-  const response = await fetch(`${apiBaseUrl}/insights`)
+  const token = getAccessToken()
+  const response = await fetch(`${apiBaseUrl}/insights`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized()
     const problem = await response.json().catch(() => null) as { detail?: string } | null
     throw new Error(problem?.detail ?? 'Could not load activity insights.')
   }

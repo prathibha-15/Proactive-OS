@@ -9,6 +9,8 @@ import com.proactiveos.events.entity.LifeEventType;
 import com.proactiveos.events.service.LifeEventService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,29 +32,36 @@ public class LifeEventController {
     }
 
     @PostMapping
-    public ResponseEntity<EventResponse> create(@Valid @RequestBody EventRequest request) {
-        EventResponse response = lifeEventService.create(request);
+    public ResponseEntity<EventResponse> create(@AuthenticationPrincipal Jwt principal,
+                                                @Valid @RequestBody EventRequest request) {
+        EventResponse response = lifeEventService.create(userId(principal), request);
         return ResponseEntity.created(URI.create("/api/events/" + response.id())).body(response);
     }
 
     @GetMapping
-    public List<EventResponse> findAll(@RequestParam(required = false) LifeEventType type) {
-        return lifeEventService.findAll(type);
+    public List<EventResponse> findAll(@AuthenticationPrincipal Jwt principal,
+                                       @RequestParam(required = false) LifeEventType type) {
+        return lifeEventService.findAll(userId(principal), type);
     }
 
     @GetMapping("/{eventId}")
-    public EventResponse findById(@PathVariable Long eventId) {
-        return lifeEventService.findById(eventId);
+    public EventResponse findById(@AuthenticationPrincipal Jwt principal, @PathVariable Long eventId) {
+        return lifeEventService.findById(userId(principal), eventId);
     }
 
     @PutMapping("/{eventId}")
-    public EventResponse update(@PathVariable Long eventId, @Valid @RequestBody EventRequest request) {
-        return lifeEventService.update(eventId, request);
+    public EventResponse update(@AuthenticationPrincipal Jwt principal, @PathVariable Long eventId,
+                                @Valid @RequestBody EventRequest request) {
+        return lifeEventService.update(userId(principal), eventId, request);
     }
 
     @DeleteMapping("/{eventId}")
-    public ResponseEntity<Void> delete(@PathVariable Long eventId) {
-        lifeEventService.delete(eventId);
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt principal, @PathVariable Long eventId) {
+        lifeEventService.delete(userId(principal), eventId);
         return ResponseEntity.noContent().build();
+    }
+
+    private Long userId(Jwt principal) {
+        return Long.valueOf(principal.getSubject());
     }
 }

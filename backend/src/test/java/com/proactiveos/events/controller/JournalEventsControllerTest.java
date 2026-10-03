@@ -4,6 +4,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,18 +36,18 @@ class JournalEventsControllerTest {
                 "Spring Boot", 120, null, null, null, null, null, null, null, null, null, null, null, now, now, null);
         var waterEvent = new EventResponse(2L, LifeEventType.WATER, EventSource.MANUAL, 5L, now, null,
                 null, null, 3, null, null, null, null, null, null, null, null, null, null, now, now, null);
-        when(lifeEventService.findByJournal(5L)).thenReturn(List.of(waterEvent, studyEvent));
+        when(lifeEventService.findByJournal(7L, 5L)).thenReturn(List.of(waterEvent, studyEvent));
 
-        mockMvc.perform(get("/api/journals/5/events"))
+        mockMvc.perform(get("/api/journals/5/events").with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2));
     }
 
     @Test
     void returnsNotFoundForMissingJournal() throws Exception {
-        when(lifeEventService.findByJournal(99L)).thenThrow(new JournalNotFoundException(99L));
+        when(lifeEventService.findByJournal(7L, 99L)).thenThrow(new JournalNotFoundException(99L));
 
-        mockMvc.perform(get("/api/journals/99/events"))
+        mockMvc.perform(get("/api/journals/99/events").with(jwt().jwt(token -> token.subject("7"))))
                 .andExpect(status().isNotFound());
     }
 }
