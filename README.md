@@ -1,6 +1,6 @@
 # Proactive OS
 
-Proactive OS is a personal life-tracking application. Phase 1 provides a free-form journal backed by Spring Boot, React, and PostgreSQL. AI extraction and LifeEvents are intentionally out of scope.
+Proactive OS is a personal life-tracking application with private journals, structured life events, deterministic insights and recommendations, and a development-only external-data foundation, backed by Spring Boot, React, and PostgreSQL.
 
 ## Prerequisites
 
@@ -56,6 +56,22 @@ Open the frontend URL shown by Vite, normally `http://localhost:5173`. It calls 
 - Journal clock times are interpreted in `AI_TIME_ZONE` and stored as UTC instants in the existing `eventTime` field. The default timezone is `UTC`.
 - Set `VITE_APP_TIME_ZONE` in `frontend/.env.local` to the same value as `AI_TIME_ZONE`; the Events date filter and displayed event times use that timezone.
 - Times without a reliable clock value remain unknown. Sleep onset can be the event time; wake-time details are retained in notes, and sleep duration is not inferred.
+
+## External Data
+
+- `GET /api/integrations` lists available providers and the signed-in user's last-sync time.
+- `POST /api/integrations/MOCK/sync` imports deterministic synthetic Steps, Workout, and Sleep records as `DEVICE` events.
+- The mock is development/test data only; there is no real health account connection, OAuth flow, or credential storage.
+- External identities are deduplicated by owner, provider, and external record ID. Events keep JOURNAL, MANUAL, and DEVICE observations separate.
+- Hibernate `ddl-auto: update` adds the nullable event identity columns and per-user sync-state table; this repository does not use versioned database migrations.
+
+## External Data Foundation
+
+- `GET /api/integrations` returns the current user's available providers and last-sync time.
+- `POST /api/integrations/MOCK/sync` imports deterministic synthetic Steps, Workout, and Sleep events as `DEVICE` data.
+- The mock provider is for development/testing only; there is no real health-provider connection or OAuth/token storage in this phase.
+- External records retain provider identity and are deduplicated by owner, provider, and external record ID. Journal, Manual, and Device observations remain separate.
+- Hibernate `ddl-auto: update` manages the added nullable event identity fields and per-user last-sync state table; this repository does not currently use a versioned migration framework.
 
 ## Journal API
 

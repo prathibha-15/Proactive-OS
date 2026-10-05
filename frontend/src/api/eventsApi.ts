@@ -10,6 +10,7 @@ export type LifeEvent = {
   id: number
   type: LifeEventType
   source: EventSource
+  externalProvider: string | null
   journalEntryId: number | null
   eventTime: string | null
   confidence: number | null

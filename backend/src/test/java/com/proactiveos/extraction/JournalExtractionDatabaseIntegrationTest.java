@@ -20,6 +20,7 @@ import com.proactiveos.events.entity.WaterEvent;
 import com.proactiveos.events.entity.WaterUnit;
 import com.proactiveos.events.entity.WorkoutEvent;
 import com.proactiveos.events.repository.LifeEventRepository;
+import com.proactiveos.integrations.entity.ExternalProviderId;
 import com.proactiveos.journal.entity.JournalEntry;
 import com.proactiveos.journal.repository.JournalEntryRepository;
 import com.proactiveos.insights.service.ProactiveInsightsService;
@@ -62,7 +63,10 @@ class JournalExtractionDatabaseIntegrationTest {
                 "Old extraction", 30), owner));
         lifeEventRepository.save(owned(new WaterEvent(journal.getId(), null, EventSource.MANUAL, null,
                 1, WaterUnit.GLASS), owner));
-        lifeEventRepository.save(owned(new StepsEvent(journal.getId(), null, EventSource.DEVICE, null, 2500), owner));
+        StepsEvent deviceSteps = owned(
+                new StepsEvent(journal.getId(), null, EventSource.DEVICE, null, 2500), owner);
+        deviceSteps.assignExternalIdentity(ExternalProviderId.MOCK, "device-steps-existing");
+        lifeEventRepository.save(deviceSteps);
                                 when(aiExtractionService.extract(journal.getContent(), journal.getEntryDate(), ZoneId.of("Asia/Kolkata")))
                 .thenReturn("""
                         {"events":[
@@ -91,8 +95,11 @@ class JournalExtractionDatabaseIntegrationTest {
                 .isEqualTo(1);
         assertThat(persisted).filteredOn(event -> event.getSource() == EventSource.DEVICE)
                 .singleElement()
-                .extracting(event -> ((StepsEvent) event).getCount())
-                .isEqualTo(2500);
+                                .satisfies(event -> {
+                                        assertThat(((StepsEvent) event).getCount()).isEqualTo(2500);
+                                        assertThat(event.getExternalProvider()).isEqualTo(ExternalProviderId.MOCK);
+                                        assertThat(event.getExternalRecordId()).isEqualTo("device-steps-existing");
+                                });
         assertThat(persisted).filteredOn(event -> event instanceof StudyEvent)
                 .extracting(event -> ((StudyEvent) event).getSubject())
                 .containsExactly("Spring Boot");

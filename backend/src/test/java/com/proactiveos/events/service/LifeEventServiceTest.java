@@ -50,7 +50,11 @@ class LifeEventServiceTest {
     private LifeEventService lifeEventService;
 
     private EventRequest studyRequest() {
-        return new EventRequest(LifeEventType.STUDY, EventSource.MANUAL, null, Instant.parse("2026-09-24T10:00:00Z"),
+        return studyRequest(EventSource.MANUAL);
+    }
+
+    private EventRequest studyRequest(EventSource source) {
+        return new EventRequest(LifeEventType.STUDY, source, null, Instant.parse("2026-09-24T10:00:00Z"),
             null, "Spring Boot", 120, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
@@ -70,6 +74,15 @@ class LifeEventServiceTest {
         assertThat(response.type()).isEqualTo(LifeEventType.STUDY);
         assertThat(response.subject()).isEqualTo("Spring Boot");
         assertThat(response.durationMinutes()).isEqualTo(120);
+    }
+
+    @Test
+    void normalEventCreationCannotForgeDeviceProvenance() {
+        when(lifeEventRepository.save(any(LifeEvent.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = lifeEventService.create(OWNER_ID, studyRequest(EventSource.DEVICE));
+
+        assertThat(response.source()).isEqualTo(EventSource.MANUAL);
     }
 
     @Test
@@ -119,6 +132,16 @@ class LifeEventServiceTest {
 
         assertThat(response.subject()).isEqualTo("After");
         assertThat(response.durationMinutes()).isEqualTo(90);
+    }
+
+    @Test
+    void updatingDeviceDetailsPreservesDeviceProvenance() {
+        StudyEvent entity = new StudyEvent(null, Instant.now(), EventSource.DEVICE, null, "Before", 60);
+        when(lifeEventRepository.findByIdAndOwner_Id(1L, OWNER_ID)).thenReturn(Optional.of(entity));
+
+        var response = lifeEventService.update(OWNER_ID, 1L, studyRequest(EventSource.MANUAL));
+
+        assertThat(response.source()).isEqualTo(EventSource.DEVICE);
     }
 
     @Test

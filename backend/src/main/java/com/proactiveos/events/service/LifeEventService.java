@@ -36,7 +36,7 @@ public class LifeEventService {
     @Transactional
     public EventResponse create(Long ownerId, EventRequest request) {
         validateJournalReference(ownerId, request.journalEntryId());
-        LifeEvent entity = mapper.toEntity(request);
+        LifeEvent entity = mapper.toEntity(withSource(request, EventSource.MANUAL));
         entity.assignOwner(userRepository.getReferenceById(ownerId));
         return mapper.toResponse(lifeEventRepository.save(entity));
     }
@@ -89,7 +89,7 @@ public class LifeEventService {
             throw new EventTypeMismatchException(eventId, entity.getType(), request.type());
         }
         validateJournalReference(ownerId, request.journalEntryId());
-        entity.updateCommon(request.journalEntryId(), request.eventTime(), request.source(), request.confidence());
+        entity.updateCommon(request.journalEntryId(), request.eventTime(), entity.getSource(), request.confidence());
         mapper.applyDetails(entity, request);
         return mapper.toResponse(entity);
     }
@@ -108,5 +108,13 @@ public class LifeEventService {
         if (journalEntryId != null && journalEntryRepository.findByIdAndOwner_Id(journalEntryId, ownerId).isEmpty()) {
             throw new JournalNotFoundException(journalEntryId);
         }
+    }
+
+    private EventRequest withSource(EventRequest request, EventSource source) {
+        return new EventRequest(
+                request.type(), source, request.journalEntryId(), request.eventTime(), request.confidence(),
+                request.subject(), request.durationMinutes(), request.quantity(), request.unit(), request.description(),
+                request.calories(), request.activityType(), request.count(), request.company(), request.role(),
+                request.status(), request.mood(), request.notes(), request.applicationCount());
     }
 }

@@ -5,6 +5,7 @@ import { clearLogin, getAccessToken, getStoredUser, login, register, storeLogin,
 import { journalApi, type Journal } from './api/journalApi'
 import { eventsApi, LIFE_EVENT_TYPES, type LifeEvent, type LifeEventRequest, type LifeEventType } from './api/eventsApi'
 import { getProactiveInsights } from './api/insightsApi'
+import { integrationsApi } from './api/integrationsApi'
 
 const appTimeZone = import.meta.env.VITE_APP_TIME_ZONE || 'UTC'
 
@@ -46,7 +47,11 @@ function compareTimelineEvents(left: LifeEvent, right: LifeEvent) {
 }
 
 function Layout({ children, user, onLogout }: { children: React.ReactNode, user: AuthUser, onLogout: () => void }) {
-  return <main className="min-h-screen bg-stone-50 px-5 py-8 text-stone-950 sm:px-10 sm:py-10"><div className="mx-auto max-w-4xl"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-300 pb-5"><Link to="/dashboard" className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</Link><nav aria-label="Main navigation" className="flex flex-wrap items-center gap-x-5 gap-y-2"><Link to="/dashboard" className="text-sm font-medium text-stone-600 hover:text-teal-700">Overview</Link><Link to="/" className="text-sm font-medium text-stone-600 hover:text-teal-700">Write journal</Link><Link to="/journals" className="text-sm font-medium text-stone-600 hover:text-teal-700">Journals</Link><Link to="/events" className="text-sm font-medium text-stone-600 hover:text-teal-700">Life events</Link><span className="text-sm text-stone-500">{user.email}</span><button onClick={onLogout} className="text-sm font-medium text-teal-700 underline">Sign out</button></nav></header>{children}</div></main>
+  return <main className="min-h-screen bg-stone-50 px-5 py-8 text-stone-950 sm:px-10 sm:py-10"><div className="mx-auto max-w-4xl"><header className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-300 pb-5"><Link to="/dashboard" className="text-sm font-bold tracking-[0.16em] text-teal-700">PROACTIVE OS</Link><nav aria-label="Main navigation" className="flex flex-wrap items-center gap-x-5 gap-y-2"><Link to="/dashboard" className="text-sm font-medium text-stone-600 hover:text-teal-700">Overview</Link><Link to="/" className="text-sm font-medium text-stone-600 hover:text-teal-700">Write journal</Link><Link to="/journals" className="text-sm font-medium text-stone-600 hover:text-teal-700">Journals</Link><Link to="/events" className="text-sm font-medium text-stone-600 hover:text-teal-700">Life events</Link><Link to="/integrations" className="text-sm font-medium text-stone-600 hover:text-teal-700">Integrations</Link><span className="text-sm text-stone-500">{user.email}</span><button onClick={onLogout} className="text-sm font-medium text-teal-700 underline">Sign out</button></nav></header>{children}</div></main>
+}
+
+function eventSourceLabel(event: LifeEvent) {
+  return event.externalProvider ? `Source: ${event.source} · ${event.externalProvider}` : `Source: ${event.source}`
 }
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -164,7 +169,7 @@ function DashboardPage() {
 
       <section className="mt-10">
         <div className="flex items-baseline justify-between gap-4"><h2 className="text-2xl font-semibold">Recent activity</h2><Link to="/journals" className="text-sm font-medium text-teal-700 underline">Journal history</Link></div>
-        {recentEvents.length === 0 ? <p className="mt-4 text-stone-600">Events you extract or add will appear here.</p> : <ul className="mt-3">{recentEvents.map((event) => <li key={event.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-stone-300 py-4"><div><p className="font-semibold text-teal-700">{event.type}</p><p className="mt-1 text-stone-700">{eventSummary(event)}</p><p className="mt-1 text-xs uppercase tracking-wide text-stone-400">Source: {event.source}</p></div><p className="text-sm text-stone-500">{event.eventTime ? formatTimestamp(event.eventTime) : `Activity time unknown · recorded ${formatTimestamp(event.createdAt)}`}</p></li>)}</ul>}
+        {recentEvents.length === 0 ? <p className="mt-4 text-stone-600">Events you extract or add will appear here.</p> : <ul className="mt-3">{recentEvents.map((event) => <li key={event.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-b border-stone-300 py-4"><div><p className="font-semibold text-teal-700">{event.type}</p><p className="mt-1 text-stone-700">{eventSummary(event)}</p><p className="mt-1 text-xs uppercase tracking-wide text-stone-400">{eventSourceLabel(event)}</p></div><p className="text-sm text-stone-500">{event.eventTime ? formatTimestamp(event.eventTime) : `Activity time unknown · recorded ${formatTimestamp(event.createdAt)}`}</p></li>)}</ul>}
       </section>
     </>}
   </section></AuthenticatedLayout>
@@ -241,7 +246,7 @@ function EventForm({ initialEvent, journalEntryId, submitLabel, onSubmit, isPend
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const fields = EVENT_TYPE_FIELDS[type]
-    const request: LifeEventRequest = { type, source: 'MANUAL', journalEntryId: journalEntryId ?? initialEvent?.journalEntryId ?? undefined }
+    const request: LifeEventRequest = { type, source: initialEvent?.source ?? 'MANUAL', journalEntryId: journalEntryId ?? initialEvent?.journalEntryId ?? undefined }
     for (const field of fields) {
       const raw = values[field.name]
       if (raw === undefined || raw === '') continue
@@ -280,7 +285,7 @@ function EventListItem({ event, onEdit, onDelete }: { event: LifeEvent, onEdit: 
       <p className="text-sm text-stone-500">{formatTimestamp(event.eventTime)}</p>
     </div>
     <p className="mt-1 text-stone-700">{eventSummary(event)}</p>
-    <p className="mt-1 text-xs uppercase tracking-wide text-stone-400">Source: {event.source}</p>
+    <p className="mt-1 text-xs uppercase tracking-wide text-stone-400">{eventSourceLabel(event)}</p>
     <div className="mt-2 flex gap-3">
       <button onClick={onEdit} className="text-sm font-medium text-teal-700 hover:underline">Edit</button>
       <button onClick={onDelete} className="text-sm font-medium text-rose-700 hover:underline">Delete</button>
@@ -342,14 +347,51 @@ function JournalEventsSection({ journalId, onExtract, isExtracting, extractionEr
     {eventsQuery.isError && <p role="alert" className="mt-4 text-rose-700">{eventsQuery.error.message}</p>}
     {eventsQuery.data?.length === 0 && <p className="mt-4 text-stone-600">No events linked to this entry yet.</p>}
     <ul className="mt-4">
-      {eventsQuery.data?.map((event) => <li key={event.id} className="border-b border-stone-300 py-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold text-teal-700">{event.type}</p><p className="text-xs uppercase tracking-wide text-stone-400">Source: {event.source}</p></div><p className="mt-1 text-stone-700">{eventSummary(event)}</p></li>)}
+      {eventsQuery.data?.map((event) => <li key={event.id} className="border-b border-stone-300 py-3"><div className="flex items-center justify-between gap-3"><p className="font-semibold text-teal-700">{event.type}</p><p className="text-xs uppercase tracking-wide text-stone-400">{eventSourceLabel(event)}</p></div><p className="mt-1 text-stone-700">{eventSummary(event)}</p></li>)}
     </ul>
     <Link to="/events" className="mt-4 inline-block text-teal-700 underline">Manage all events</Link>
   </section>
 }
 
+function IntegrationsPage() {
+  const userId = getStoredUser()?.id
+  const queryClient = useQueryClient()
+  const providersQuery = useQuery({
+    queryKey: ['user', userId, 'integrations'],
+    queryFn: integrationsApi.getProviders,
+  })
+  const syncMutation = useMutation({
+    mutationFn: integrationsApi.sync,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['user', userId] }),
+  })
+
+  return <AuthenticatedLayout><section className="py-10">
+    <p className="text-sm font-semibold tracking-[0.14em] text-teal-700">DATA SOURCES</p>
+    <h1 className="mt-3 text-4xl font-semibold sm:text-5xl">Integrations</h1>
+    <p className="mt-2 text-stone-600">External observations remain separate from journal and manual events.</p>
+    {providersQuery.isPending && <p className="mt-8 text-stone-600">Loading providers...</p>}
+    {providersQuery.isError && <p role="alert" className="mt-8 text-rose-700">{providersQuery.error.message}</p>}
+    {providersQuery.data?.map((provider) => <section key={provider.provider} className="mt-8 border-y border-stone-300 py-6">
+      <div className="flex flex-wrap items-start justify-between gap-5">
+        <div>
+          <h2 className="text-xl font-semibold">{provider.displayName}</h2>
+          <p className="mt-1 text-sm font-medium uppercase text-amber-800">Development/test data only</p>
+          <p className="mt-2 text-sm text-stone-600">No external health account is connected. Records are synthetic and marked DEVICE · {provider.provider}.</p>
+          <p className="mt-3 text-sm text-stone-600">Supports {provider.supportedEventTypes.join(', ')}</p>
+          <p className="mt-1 text-sm text-stone-500">Last synced: {provider.lastSyncedAt ? formatTimestamp(provider.lastSyncedAt) : 'Never'}</p>
+        </div>
+        <button onClick={() => syncMutation.mutate(provider.provider)} disabled={syncMutation.isPending} className="bg-teal-700 px-4 py-3 font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:bg-stone-400">
+          {syncMutation.isPending ? 'Syncing...' : 'Sync mock data'}
+        </button>
+      </div>
+      {syncMutation.isSuccess && syncMutation.data.provider === provider.provider && <p role="status" className="mt-4 text-sm text-teal-800">Fetched {syncMutation.data.eventsFetched}: created {syncMutation.data.eventsCreated}, updated {syncMutation.data.eventsUpdated}, skipped {syncMutation.data.eventsSkipped}.</p>}
+      {syncMutation.isError && <p role="alert" className="mt-4 text-sm text-rose-700">{syncMutation.error.message}</p>}
+    </section>)}
+  </section></AuthenticatedLayout>
+}
+
 function App() {
-  return <Routes><Route path="/login" element={<AuthPage />} /><Route path="/" element={<ComposePage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/journals/new" element={<ComposePage />} /><Route path="/journals" element={<JournalHistoryPage />} /><Route path="/journals/:id" element={<JournalDetailPage />} /><Route path="/events" element={<EventsPage />} /><Route path="*" element={<Navigate to="/dashboard" replace />} /></Routes>
+  return <Routes><Route path="/login" element={<AuthPage />} /><Route path="/" element={<ComposePage />} /><Route path="/dashboard" element={<DashboardPage />} /><Route path="/journals/new" element={<ComposePage />} /><Route path="/journals" element={<JournalHistoryPage />} /><Route path="/journals/:id" element={<JournalDetailPage />} /><Route path="/events" element={<EventsPage />} /><Route path="/integrations" element={<IntegrationsPage />} /><Route path="*" element={<Navigate to="/dashboard" replace />} /></Routes>
 }
 
 export default App

@@ -3,6 +3,7 @@ package com.proactiveos.events.entity;
 import java.time.Instant;
 
 import com.proactiveos.auth.entity.User;
+import com.proactiveos.integrations.entity.ExternalProviderId;
 import jakarta.persistence.Column;
 import jakarta.persistence.DiscriminatorColumn;
 import jakarta.persistence.DiscriminatorType;
@@ -20,6 +21,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 /**
  * Common fields shared by every structured event. Type-specific data lives on the
@@ -27,7 +29,9 @@ import jakarta.persistence.Table;
  * Not sealed/final: Hibernate must be able to generate proxy subclasses for every entity.
  */
 @Entity
-@Table(name = "life_events")
+@Table(name = "life_events", uniqueConstraints = @UniqueConstraint(
+    name = "uk_life_event_external_record",
+    columnNames = {"user_id", "external_provider", "external_record_id"}))
 @Inheritance(strategy = InheritanceType.JOINED)
 @DiscriminatorColumn(name = "event_type", discriminatorType = DiscriminatorType.STRING)
 public abstract class LifeEvent {
@@ -58,6 +62,13 @@ public abstract class LifeEvent {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User owner;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "external_provider", length = 40)
+    private ExternalProviderId externalProvider;
+
+    @Column(name = "external_record_id", length = 200)
+    private String externalRecordId;
 
     protected LifeEvent() {
     }
@@ -94,6 +105,11 @@ public abstract class LifeEvent {
         this.owner = owner;
     }
 
+    public void assignExternalIdentity(ExternalProviderId provider, String externalRecordId) {
+        this.externalProvider = provider;
+        this.externalRecordId = externalRecordId;
+    }
+
     public abstract LifeEventType getType();
 
     public Long getId() {
@@ -126,5 +142,13 @@ public abstract class LifeEvent {
 
     public User getOwner() {
         return owner;
+    }
+
+    public ExternalProviderId getExternalProvider() {
+        return externalProvider;
+    }
+
+    public String getExternalRecordId() {
+        return externalRecordId;
     }
 }

@@ -136,7 +136,8 @@ public class LifeEventMapper {
                 notes,
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
-                applicationCount
+                applicationCount,
+                entity.getExternalProvider()
         );
     }
 }

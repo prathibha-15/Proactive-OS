@@ -5,6 +5,7 @@ import java.time.Instant;
 
 import com.proactiveos.events.entity.LifeEvent;
 import com.proactiveos.events.entity.EventSource;
+import com.proactiveos.integrations.entity.ExternalProviderId;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -25,6 +26,9 @@ public interface LifeEventRepository extends JpaRepository<LifeEvent, Long> {
                                                                  Long ownerId);
 
     java.util.Optional<LifeEvent> findByIdAndOwner_Id(Long id, Long ownerId);
+
+        java.util.Optional<LifeEvent> findByOwner_IdAndExternalProviderAndExternalRecordId(
+            Long ownerId, ExternalProviderId provider, String externalRecordId);
 
     @Modifying
     @Query("update LifeEvent e set e.journalEntryId = null where e.journalEntryId = :journalEntryId and e.owner.id = :ownerId")
