@@ -3,10 +3,10 @@ package com.proactiveos.integrations.entity;
 import java.time.Instant;
 
 import com.proactiveos.auth.entity.User;
+import com.proactiveos.events.entity.ExternalProviderIdConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -29,7 +29,7 @@ public class IntegrationSyncState {
     @JoinColumn(name = "user_id", nullable = false)
     private User owner;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = ExternalProviderIdConverter.class)
     @Column(name = "provider", nullable = false, length = 40)
     private ExternalProviderId provider;
 

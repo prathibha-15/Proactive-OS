@@ -1,6 +1,7 @@
 package com.proactiveos.integrations.controller;
 
 import com.proactiveos.integrations.provider.UnsupportedExternalProviderException;
+import com.proactiveos.integrations.service.ClientUploadRequiredException;
 import com.proactiveos.integrations.service.InvalidExternalActivityException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
@@ -18,5 +19,10 @@ public class ExternalIntegrationsExceptionHandler {
     @ExceptionHandler(InvalidExternalActivityException.class)
     public ProblemDetail handleInvalidProviderData(InvalidExternalActivityException exception) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, exception.getMessage());
+    }
+
+    @ExceptionHandler(ClientUploadRequiredException.class)
+    public ProblemDetail handleClientUploadRequired(ClientUploadRequiredException exception) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, exception.getMessage());
     }
 }

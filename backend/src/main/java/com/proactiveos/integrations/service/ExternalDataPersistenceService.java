@@ -8,6 +8,7 @@ import java.util.Set;
 import com.proactiveos.auth.entity.User;
 import com.proactiveos.auth.repository.UserRepository;
 import com.proactiveos.events.entity.LifeEvent;
+import com.proactiveos.events.entity.EventSource;
 import com.proactiveos.events.repository.LifeEventRepository;
 import com.proactiveos.events.service.LifeEventMapper;
 import com.proactiveos.integrations.dto.ExternalActivityRecord;
@@ -46,17 +47,37 @@ public class ExternalDataPersistenceService {
         User owner = userRepository.findByIdForUpdate(ownerId)
                 .orElseThrow(() -> new InvalidExternalActivityException("Authenticated user no longer exists."));
         int created = 0;
+        int updated = 0;
         int skipped = 0;
         Set<String> seenInBatch = new HashSet<>();
         for (ExternalActivityRecord record : records) {
+            if (record == null) {
+                throw new InvalidExternalActivityException("External provider returned a null record.");
+            }
+            var request = normalizer.normalize(record);
             if (!provider.supportedEventTypes().contains(record.type())) {
                 throw new InvalidExternalActivityException("Provider returned unsupported event type: " + record.type());
             }
-            var request = normalizer.normalize(record);
-            if (!seenInBatch.add(record.externalRecordId())
-                    || lifeEventRepository.findByOwner_IdAndExternalProviderAndExternalRecordId(
-                            ownerId, provider.providerId(), record.externalRecordId()).isPresent()) {
+            if (!seenInBatch.add(record.externalRecordId())) {
                 skipped++;
+                continue;
+            }
+            var existing = lifeEventRepository.findByOwner_IdAndExternalProviderAndExternalRecordId(
+                    ownerId, provider.providerId(), record.externalRecordId());
+            if (existing.isPresent()) {
+                LifeEvent event = existing.get();
+                if (event.getType() != record.type() || event.getSource() != EventSource.DEVICE) {
+                    throw new InvalidExternalActivityException(
+                            "External record identity conflicts with stored event type or provenance.");
+                }
+                if (isUnchanged(event, request)) {
+                    skipped++;
+                    continue;
+                }
+                event.updateExternalObservation(request.eventTime());
+                mapper.applyDetails(event, request);
+                lifeEventRepository.save(event);
+                updated++;
                 continue;
             }
             LifeEvent event = mapper.toEntity(request);
@@ -71,6 +92,15 @@ public class ExternalDataPersistenceService {
                 .orElseGet(() -> IntegrationSyncState.create(owner, provider.providerId()));
         state.markSynced(lastSyncedAt);
         syncStateRepository.save(state);
-        return new IntegrationSyncResponse(provider.providerId(), records.size(), created, 0, skipped, lastSyncedAt);
+        return new IntegrationSyncResponse(provider.providerId(), records.size(), created, updated, skipped, lastSyncedAt);
+    }
+
+    private boolean isUnchanged(LifeEvent event, com.proactiveos.events.dto.EventRequest request) {
+        var current = mapper.toResponse(event);
+        return java.util.Objects.equals(current.eventTime(), request.eventTime())
+                && java.util.Objects.equals(current.durationMinutes(), request.durationMinutes())
+                && java.util.Objects.equals(current.count(), request.count())
+                && java.util.Objects.equals(current.activityType(), request.activityType())
+                && java.util.Objects.equals(current.notes(), request.notes());
     }
 }

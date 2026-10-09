@@ -13,6 +13,7 @@ import java.util.List;
 
 import com.proactiveos.auth.config.SecurityConfiguration;
 import com.proactiveos.events.entity.LifeEventType;
+import com.proactiveos.integrations.dto.ExternalActivityRecord;
 import com.proactiveos.integrations.dto.IntegrationProviderStatus;
 import com.proactiveos.integrations.dto.IntegrationSyncResponse;
 import com.proactiveos.integrations.entity.ExternalProviderId;
@@ -36,15 +37,21 @@ class ExternalIntegrationsControllerTest {
 
     @Test
     void returnsCurrentUsersAvailableDevelopmentProvider() throws Exception {
-        when(syncService.getProviders(12L)).thenReturn(List.of(new IntegrationProviderStatus(
-                ExternalProviderId.MOCK, "Development mock provider", true,
-                List.of(LifeEventType.STEPS, LifeEventType.SLEEP, LifeEventType.WORKOUT), null)));
+        when(syncService.getProviders(12L)).thenReturn(List.of(
+            new IntegrationProviderStatus(ExternalProviderId.MOCK, "Development mock provider", true,
+                List.of(LifeEventType.STEPS, LifeEventType.SLEEP, LifeEventType.WORKOUT), null),
+            new IntegrationProviderStatus(ExternalProviderId.HEALTH_CONNECT,
+                "Health Connect (Android companion required)", false, true,
+                List.of(LifeEventType.STEPS, LifeEventType.SLEEP), null)));
 
         mockMvc.perform(get("/api/integrations").with(jwt().jwt(token -> token.subject("12"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].provider").value("MOCK"))
                 .andExpect(jsonPath("$[0].developmentOnly").value(true))
-                .andExpect(jsonPath("$[0].lastSyncedAt").doesNotExist());
+                .andExpect(jsonPath("$[0].lastSyncedAt").doesNotExist())
+                .andExpect(jsonPath("$[1].provider").value("HEALTH_CONNECT"))
+                .andExpect(jsonPath("$[1].clientUploadRequired").value(true))
+                .andExpect(jsonPath("$[1].developmentOnly").value(false));
 
         verify(syncService).getProviders(12L);
     }
@@ -65,10 +72,63 @@ class ExternalIntegrationsControllerTest {
         verify(syncService).sync(34L, ExternalProviderId.MOCK);
     }
 
+        @Test
+        void healthConnectUploadUsesJwtOwnerAndIgnoresClientOwnerId() throws Exception {
+        var record = new ExternalActivityRecord("steps-2026-10-03", LifeEventType.STEPS,
+            Instant.parse("2026-10-03T04:00:00Z"), null, 8247, null, null);
+        when(syncService.sync(34L, ExternalProviderId.HEALTH_CONNECT, List.of(record))).thenReturn(
+            new IntegrationSyncResponse(ExternalProviderId.HEALTH_CONNECT, 1, 1, 0, 0,
+                Instant.parse("2026-10-03T12:00:00Z")));
+
+        mockMvc.perform(post("/api/integrations/HEALTH_CONNECT/sync")
+                .with(jwt().jwt(token -> token.subject("34")))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("""
+                    {"ownerId":999,"records":[{"externalRecordId":"steps-2026-10-03",
+                    "type":"STEPS","eventTime":"2026-10-03T04:00:00Z","count":8247}]}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.provider").value("HEALTH_CONNECT"))
+            .andExpect(jsonPath("$.eventsCreated").value(1));
+
+        verify(syncService).sync(34L, ExternalProviderId.HEALTH_CONNECT, List.of(record));
+        }
+
+        @Test
+        void rejectsMalformedHealthConnectTimestamp() throws Exception {
+        mockMvc.perform(post("/api/integrations/HEALTH_CONNECT/sync")
+                .with(jwt().jwt(token -> token.subject("34")))
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("""
+                    {"records":[{"externalRecordId":"steps-invalid-time","type":"STEPS",
+                    "eventTime":"not-a-timestamp","count":12}]}
+                    """))
+            .andExpect(status().isBadRequest());
+        }
+
+    @Test
+    void rejectsClientSuppliedRecordsForMockProvider() throws Exception {
+            var record = new ExternalActivityRecord("mock-forgery", LifeEventType.STEPS,
+                null, null, 12, null, null);
+            when(syncService.sync(34L, ExternalProviderId.MOCK, List.of(record)))
+                .thenThrow(new com.proactiveos.integrations.service.InvalidExternalActivityException(
+                    "This provider does not accept client-supplied records."));
+
+            mockMvc.perform(post("/api/integrations/MOCK/sync")
+                    .with(jwt().jwt(token -> token.subject("34")))
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .content("{\"records\":[{\"externalRecordId\":\"mock-forgery\",\"type\":\"STEPS\",\"count\":12}]}"))
+                .andExpect(status().isBadGateway());
+            }
+
     @Test
     void rejectsUnauthenticatedStatusAndSyncRequests() throws Exception {
         mockMvc.perform(get("/api/integrations")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/integrations/MOCK/sync")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/integrations/HEALTH_CONNECT/sync")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content("{\"records\":[]}"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test

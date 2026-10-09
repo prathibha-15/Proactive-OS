@@ -375,14 +375,14 @@ function IntegrationsPage() {
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div>
           <h2 className="text-xl font-semibold">{provider.displayName}</h2>
-          <p className="mt-1 text-sm font-medium uppercase text-amber-800">Development/test data only</p>
-          <p className="mt-2 text-sm text-stone-600">No external health account is connected. Records are synthetic and marked DEVICE · {provider.provider}.</p>
+          {provider.clientUploadRequired ? <p className="mt-1 text-sm font-medium text-amber-800">Requires the Proactive OS Android companion</p> : <p className="mt-1 text-sm font-medium uppercase text-amber-800">Development/test data only</p>}
+          <p className="mt-2 text-sm text-stone-600">{provider.clientUploadRequired ? 'Health data is read on your Android device only after you grant Health Connect access. Sync is not available from this web app.' : `No external health account is connected. Records are synthetic and marked DEVICE · ${provider.provider}.`}</p>
           <p className="mt-3 text-sm text-stone-600">Supports {provider.supportedEventTypes.join(', ')}</p>
           <p className="mt-1 text-sm text-stone-500">Last synced: {provider.lastSyncedAt ? formatTimestamp(provider.lastSyncedAt) : 'Never'}</p>
         </div>
-        <button onClick={() => syncMutation.mutate(provider.provider)} disabled={syncMutation.isPending} className="bg-teal-700 px-4 py-3 font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:bg-stone-400">
+        {!provider.clientUploadRequired && <button onClick={() => syncMutation.mutate(provider.provider)} disabled={syncMutation.isPending} className="bg-teal-700 px-4 py-3 font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:bg-stone-400">
           {syncMutation.isPending ? 'Syncing...' : 'Sync mock data'}
-        </button>
+        </button>}
       </div>
       {syncMutation.isSuccess && syncMutation.data.provider === provider.provider && <p role="status" className="mt-4 text-sm text-teal-800">Fetched {syncMutation.data.eventsFetched}: created {syncMutation.data.eventsCreated}, updated {syncMutation.data.eventsUpdated}, skipped {syncMutation.data.eventsSkipped}.</p>}
       {syncMutation.isError && <p role="alert" className="mt-4 text-sm text-rose-700">{syncMutation.error.message}</p>}

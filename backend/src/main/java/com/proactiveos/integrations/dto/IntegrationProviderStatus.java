@@ -10,7 +10,13 @@ public record IntegrationProviderStatus(
         ExternalProviderId provider,
         String displayName,
         boolean developmentOnly,
+                boolean clientUploadRequired,
         List<LifeEventType> supportedEventTypes,
         Instant lastSyncedAt
 ) {
+
+        public IntegrationProviderStatus(ExternalProviderId provider, String displayName, boolean developmentOnly,
+                                                                         List<LifeEventType> supportedEventTypes, Instant lastSyncedAt) {
+                this(provider, displayName, developmentOnly, false, supportedEventTypes, lastSyncedAt);
+        }
 }

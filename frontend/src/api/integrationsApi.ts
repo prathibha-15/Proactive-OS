@@ -1,12 +1,13 @@
 import { getAccessToken, handleUnauthorized } from './authApi'
 import type { LifeEventType } from './eventsApi'
 
-export type ExternalProviderId = 'MOCK'
+export type ExternalProviderId = 'MOCK' | 'HEALTH_CONNECT'
 
 export type IntegrationProviderStatus = {
   provider: ExternalProviderId
   displayName: string
   developmentOnly: boolean
+  clientUploadRequired: boolean
   supportedEventTypes: LifeEventType[]
   lastSyncedAt: string | null
 }

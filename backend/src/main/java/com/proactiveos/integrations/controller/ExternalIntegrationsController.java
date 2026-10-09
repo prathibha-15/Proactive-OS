@@ -2,6 +2,7 @@ package com.proactiveos.integrations.controller;
 
 import java.util.List;
 
+import com.proactiveos.integrations.dto.ExternalSyncRequest;
 import com.proactiveos.integrations.dto.IntegrationProviderStatus;
 import com.proactiveos.integrations.dto.IntegrationSyncResponse;
 import com.proactiveos.integrations.entity.ExternalProviderId;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestBody;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/integrations")
@@ -31,8 +34,12 @@ public class ExternalIntegrationsController {
 
     @PostMapping("/{provider}/sync")
     public IntegrationSyncResponse sync(@AuthenticationPrincipal Jwt principal,
-                                        @PathVariable ExternalProviderId provider) {
-        return syncService.sync(ownerId(principal), provider);
+                                        @PathVariable ExternalProviderId provider,
+                                        @Valid @RequestBody(required = false) ExternalSyncRequest request) {
+        if (request == null) {
+            return syncService.sync(ownerId(principal), provider);
+        }
+        return syncService.sync(ownerId(principal), provider, request.records());
     }
 
     private Long ownerId(Jwt principal) {

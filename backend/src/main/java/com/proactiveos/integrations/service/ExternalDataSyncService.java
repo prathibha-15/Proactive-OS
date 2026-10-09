@@ -33,6 +33,7 @@ public class ExternalDataSyncService {
                         provider.providerId(),
                         provider.displayName(),
                         provider.developmentOnly(),
+                        provider.clientUploadRequired(),
                         provider.supportedEventTypes().stream().sorted().toList(),
                         syncStateRepository.findByOwner_IdAndProvider(ownerId, provider.providerId())
                                 .map(state -> state.getLastSyncedAt())
@@ -42,9 +43,21 @@ public class ExternalDataSyncService {
 
     public IntegrationSyncResponse sync(Long ownerId, ExternalProviderId providerId) {
         ExternalDataProvider provider = providerRegistry.get(providerId);
+        if (provider.clientUploadRequired()) {
+            throw new ClientUploadRequiredException(providerId);
+        }
         List<ExternalActivityRecord> records = provider.fetchRecords(ownerId);
         if (records == null) {
             throw new InvalidExternalActivityException("External provider returned no record collection.");
+        }
+        return persistenceService.persist(ownerId, provider, records);
+    }
+
+    public IntegrationSyncResponse sync(Long ownerId, ExternalProviderId providerId,
+                                         List<ExternalActivityRecord> records) {
+        ExternalDataProvider provider = providerRegistry.get(providerId);
+        if (!provider.clientUploadRequired()) {
+            throw new InvalidExternalActivityException("This provider does not accept client-supplied records.");
         }
         return persistenceService.persist(ownerId, provider, records);
     }

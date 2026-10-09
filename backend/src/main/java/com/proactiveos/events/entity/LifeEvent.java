@@ -5,6 +5,7 @@ import java.time.Instant;
 import com.proactiveos.auth.entity.User;
 import com.proactiveos.integrations.entity.ExternalProviderId;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.DiscriminatorColumn;
 import jakarta.persistence.DiscriminatorType;
 import jakarta.persistence.Entity;
@@ -63,7 +64,7 @@ public abstract class LifeEvent {
     @JoinColumn(name = "user_id")
     private User owner;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = ExternalProviderIdConverter.class)
     @Column(name = "external_provider", length = 40)
     private ExternalProviderId externalProvider;
 
@@ -108,6 +109,13 @@ public abstract class LifeEvent {
     public void assignExternalIdentity(ExternalProviderId provider, String externalRecordId) {
         this.externalProvider = provider;
         this.externalRecordId = externalRecordId;
+    }
+
+    public void updateExternalObservation(Instant eventTime) {
+        this.journalEntryId = null;
+        this.eventTime = eventTime;
+        this.source = EventSource.DEVICE;
+        this.confidence = null;
     }
 
     public abstract LifeEventType getType();

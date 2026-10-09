@@ -15,6 +15,10 @@ public interface ExternalDataProvider {
 
     boolean developmentOnly();
 
+    default boolean clientUploadRequired() {
+        return false;
+    }
+
     Set<LifeEventType> supportedEventTypes();
 
     List<ExternalActivityRecord> fetchRecords(Long ownerId);

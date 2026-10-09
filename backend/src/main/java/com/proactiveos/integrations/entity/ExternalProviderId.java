@@ -1,5 +1,6 @@
 package com.proactiveos.integrations.entity;
 
 public enum ExternalProviderId {
-    MOCK
+    MOCK,
+    HEALTH_CONNECT
 }

@@ -136,7 +136,8 @@ class ExternalDataSyncDatabaseIntegrationTest {
         assertThat(lifeEventRepository.findAllByOwner_IdOrderByEventTimeDesc(owner.getId())).hasSize(8);
 
         User otherUser = saveUser();
-        assertThat(syncService.getProviders(otherUser.getId())).singleElement()
+        assertThat(syncService.getProviders(otherUser.getId()))
+                .filteredOn(status -> status.provider() == ExternalProviderId.MOCK).singleElement()
                 .satisfies(status -> assertThat(status.lastSyncedAt()).isNull());
         assertThat(lifeEventRepository.findAllByOwner_IdOrderByEventTimeDesc(otherUser.getId())).isEmpty();
         var otherUserSync = syncService.sync(otherUser.getId(), ExternalProviderId.MOCK);
@@ -169,5 +170,34 @@ class ExternalDataSyncDatabaseIntegrationTest {
 
     private User saveUser() {
         return userRepository.save(User.create("integration-" + UUID.randomUUID() + "@example.test", "hash"));
+    }
+
+    @Test
+    void healthConnectUploadUpdatesChangedAggregateWithStableIdentity() {
+        User owner = saveUser();
+        ExternalActivityRecord initial = new ExternalActivityRecord("steps-2026-10-03-America_New_York",
+                LifeEventType.STEPS, Instant.parse("2026-10-03T04:00:00Z"), null, 4200, null, null);
+
+        var created = syncService.sync(owner.getId(), ExternalProviderId.HEALTH_CONNECT,
+                java.util.List.of(initial));
+
+        assertThat(created.eventsCreated()).isEqualTo(1);
+        assertThat(created.eventsUpdated()).isZero();
+        var changed = new ExternalActivityRecord(initial.externalRecordId(), LifeEventType.STEPS,
+                initial.eventTime(), null, 6100, null, null);
+        var updated = syncService.sync(owner.getId(), ExternalProviderId.HEALTH_CONNECT,
+                java.util.List.of(changed));
+
+        assertThat(updated.eventsCreated()).isZero();
+        assertThat(updated.eventsUpdated()).isEqualTo(1);
+        assertThat(updated.eventsSkipped()).isZero();
+        assertThat(lifeEventRepository.findAllByOwner_IdOrderByEventTimeDesc(owner.getId()))
+                .singleElement()
+                .satisfies(event -> {
+                    assertThat(event.getExternalProvider()).isEqualTo(ExternalProviderId.HEALTH_CONNECT);
+                    assertThat(event.getExternalRecordId()).isEqualTo(initial.externalRecordId());
+                    assertThat(event.getSource()).isEqualTo(EventSource.DEVICE);
+                    assertThat(((StepsEvent) event).getCount()).isEqualTo(6100);
+                });
     }
 }
